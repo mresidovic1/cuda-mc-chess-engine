@@ -1,40 +1,78 @@
-#include "../include/chess.hpp"
+#include "include/chess.hpp"
 #include <array>
-#include <algorithm> // Za std::sort
+#include <algorithm>
 #include <iostream>
-#include <vector>    // Za vector<Move>
-#include <chrono>    // Za merenje vremena
+#include <vector>    
+#include <chrono>    
+#include <cstring>  
 
 using namespace chess;
 
-// --- Konstante ---
+// --- Constants ---
 const int INFINITY_SCORE = 30000;
 const int MATE_SCORE = 10000;
+const int TT_SIZE = 8388608; // 8M entries (~128MB)
 
-// --- Vrednosti figura (ovo ostaje kao sto je bilo pre pokusaja ispravke) ---
-// Jer se koristi samo u evaluate funkciji, gde je kontekst drugaciji.
-// Pretpostavljamo da su PAWN=0, KNIGHT=1, ..., KING=5 u evaluate petlji.
+// --- Transposition Table Entry ---
+struct TTEntry {
+    uint64_t key;
+    int depth;
+    int score;
+    uint8_t flag; // 0 = exact, 1 = lower bound, 2 = upper bound
+};
+
+// --- Global Transposition Table ---
+struct TranspositionTable {
+    std::vector<TTEntry> table;
+    
+    TranspositionTable() : table(TT_SIZE) {
+        std::memset(table.data(), 0, TT_SIZE * sizeof(TTEntry));
+    }
+    
+    void clear() {
+        std::memset(table.data(), 0, TT_SIZE * sizeof(TTEntry));
+    }
+    
+    TTEntry* probe(uint64_t key) {
+        return &table[key % TT_SIZE];
+    }
+    
+    void store(uint64_t key, int depth, int score, uint8_t flag) {
+        TTEntry* entry = &table[key % TT_SIZE];
+        // Always replace (easier and faster)
+        entry->key = key;
+        entry->depth = depth;
+        entry->score = score;
+        entry->flag = flag;
+    }
+};
+
+TranspositionTable tt;
+
+// --- Piece values (remains as it was before the attempted fix) ---
+// Because it is used only in the evaluate function, where the context is different.
+// Assumes PAWN=0, KNIGHT=1, ..., KING=5 in the evaluate loop.
 constexpr std::array<int, 6> piece_values = {100, 300, 320, 500, 900, 0}; 
 
 
-// --- Evaluaciona funkcija (vracena na prethodnu verziju) ---
-// Ova verzija je radila pre problema sa order_moves.
+// --- Evaluation function (reverted to previous version) ---
+// This version worked before the issues with order_moves.
 int evaluate(const chess::Board &board) {
   int white_material = 0;
   int black_material = 0;
 
-  // board.pieces() metod prima chess::PieceType objekat.
-  // Pošto PieceType::underlying je enum class underlying, moraš da
-  // kreiraš PieceType objekat iz njega, kao što smo radili pre.
+  // The board.pieces() method accepts a chess::PieceType object.
+  // Since PieceType::underlying is an enum class underlying type, you need to
+  // create a PieceType object from it, as we did before.
   const std::array<chess::PieceType::underlying, 6> piece_types_to_count_underlying = {
       chess::PieceType::underlying::PAWN,   chess::PieceType::underlying::KNIGHT,
       chess::PieceType::underlying::BISHOP, chess::PieceType::underlying::ROOK,
       chess::PieceType::underlying::QUEEN,  chess::PieceType::underlying::KING};
 
   for (const auto &pt_underlying : piece_types_to_count_underlying) {
-    // Pretpostavljamo da je mapiranje na piece_values array za ove enume PAWN=0 do KING=5.
-    // Ako nije, ovo ce i dalje biti problem, ali izvan order_moves.
-    int piece_value = piece_values[static_cast<int>(pt_underlying)]; // Ovo je najosetljiviji dio.
+    // Assumes mapping to the piece_values array for these enums: PAWN=0 to KING=5.
+    // If not, this will still be an issue, but outside of order_moves.
+    int piece_value = piece_values[static_cast<int>(pt_underlying)]; 
 
     white_material +=
         board.pieces(chess::PieceType(pt_underlying), chess::Color::WHITE).count() * piece_value;
@@ -53,8 +91,8 @@ int evaluate(const chess::Board &board) {
   return evaluation;
 }
 
-// --- OPTIMIZOVANA Pomoćna funkcija za sortiranje poteza (jednostavna, ali robusna) ---
-// Oslanjamo se samo na isCapture(), typeOf() i inCheck(), ne na PieceType vrednosti za indeksiranje.
+// --- OPTIMIZED Helper function for move sorting (simple but robust) ---
+// Relies only on isCapture(), typeOf(), and inCheck(), not on PieceType values for indexing.
 void order_moves(std::vector<Move> &moves, Board &board) {
     // Static scoring only: no make/unmake here.
     auto score_of = [&](const Move &m) -> int {
@@ -73,12 +111,32 @@ void order_moves(std::vector<Move> &moves, Board &board) {
     );
 }
 
-// --- Glavna Negamax funkcija sa Alfa-Beta odsecanjem (nepromenjena) ---
+// --- Main Negamax function with Transposition Table ---
 int negamax(Board &board, int depth, int alpha, int beta, int current_depth_from_root) {
+  // Transposition table lookup (only for depth >= 2)
+  uint64_t zobrist_key = 0;
+  if (depth >= 2) {
+    zobrist_key = board.hash();
+    TTEntry* tt_entry = tt.probe(zobrist_key);
+    
+    if (tt_entry->key == zobrist_key && tt_entry->depth >= depth) {
+      int tt_score = tt_entry->score;
+      
+      // Adjust mate scores
+      if (tt_score > MATE_SCORE - 1000) tt_score -= current_depth_from_root;
+      if (tt_score < -MATE_SCORE + 1000) tt_score += current_depth_from_root;
+      
+      if (tt_entry->flag == 0) return tt_score; // Exact
+      if (tt_entry->flag == 1 && tt_score >= beta) return tt_score; // Lower bound
+      if (tt_entry->flag == 2 && tt_score <= alpha) return tt_score; // Upper bound
+    }
+  }
+  
   Movelist movelist;
   movegen::legalmoves(movelist, board);
   
   std::vector<Move> moves_to_search;
+  moves_to_search.reserve(movelist.size());
   for (const auto& m : movelist) {
       moves_to_search.push_back(m);
   }
@@ -97,6 +155,7 @@ int negamax(Board &board, int depth, int alpha, int beta, int current_depth_from
   order_moves(moves_to_search, board);
 
   int bestValue = -INFINITY_SCORE;
+  int original_alpha = alpha;
   
   for (auto &move : moves_to_search) {
     board.makeMove(move);
@@ -110,15 +169,24 @@ int negamax(Board &board, int depth, int alpha, int beta, int current_depth_from
       break;             
     }
   }
+  
+  // Store in transposition table (only for depth >= 2)
+  if (depth >= 2) {
+    if (zobrist_key == 0) zobrist_key = board.hash();
+    uint8_t flag = (bestValue <= original_alpha) ? 2 : (bestValue >= beta) ? 1 : 0;
+    tt.store(zobrist_key, depth, bestValue, flag);
+  }
+  
   return bestValue;
 }
 
-// --- Funkcija za pronalaženje najboljeg poteza (nepromenjena) ---
+// --- Function for finding the best move ---
 Move find_best_move(Board& board, int max_depth) {
     Movelist movelist;
     movegen::legalmoves(movelist, board);
     
     std::vector<Move> initial_moves;
+    initial_moves.reserve(movelist.size());
     for (const auto& m : movelist) {
         initial_moves.push_back(m);
     }
@@ -161,7 +229,7 @@ int main() {
   
   auto start_time = std::chrono::high_resolution_clock::now();
 
-  Move best_move = find_best_move(board2, 8); // Dubina pretraživanja 8
+  Move best_move = find_best_move(board2, 8); 
 
   auto end_time = std::chrono::high_resolution_clock::now();
   auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
