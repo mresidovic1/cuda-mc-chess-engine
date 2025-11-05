@@ -55,46 +55,22 @@ int evaluate(const chess::Board &board) {
 
 // --- OPTIMIZOVANA Pomoćna funkcija za sortiranje poteza (jednostavna, ali robusna) ---
 // Oslanjamo se samo na isCapture(), typeOf() i inCheck(), ne na PieceType vrednosti za indeksiranje.
-void order_moves(std::vector<Move> &moves, Board &board) { 
-    std::vector<std::pair<int, Move>> scored_moves;
-    scored_moves.reserve(moves.size());
+void order_moves(std::vector<Move> &moves, Board &board) {
+    // Static scoring only: no make/unmake here.
+    auto score_of = [&](const Move &m) -> int {
+        int s = 0;
+        if (board.isCapture(m)) s += 2000;        // Captures first
+        if (m.typeOf() == Move::PROMOTION) s += 1500; // Promotions next
+        return s;
+    };
 
-    for (const auto &move : moves) {
-        int score = 0;
-
-        // 1. Zahvati (Captures) - Najveći prioritet
-        if (board.isCapture(move)) {
-            // Dajemo fiksni visoki bonus za zahvate.
-            // Nema MVV/LVA ovde da bi se izbeglo pristupanje PieceType vrednostima.
-            score += 2000; 
+    std::stable_sort(
+        moves.begin(),
+        moves.end(),
+        [&](const Move &a, const Move &b) {
+            return score_of(a) > score_of(b);
         }
-
-        // 2. Promocije (Promotions)
-        if (move.typeOf() == Move::PROMOTION) {
-            // Fiksni bonus za promocije.
-            score += 1500; 
-        }
-
-        // 3. Provere (Checks)
-        // OPREZ: makeMove/unmakeMove unutar order_moves je i dalje tu,
-        // ali je to najjednostavniji način da se proveri šah.
-        board.makeMove(move);
-        if (board.inCheck()) {
-            score += 1000; 
-        }
-        board.unmakeMove(move);
-        
-        // Ostali potezi (ne-zahvati, ne-promocije, ne-provere) dobijaju 0 bodova.
-        scored_moves.push_back({score, move});
-    }
-
-    std::sort(scored_moves.begin(), scored_moves.end(), [](const std::pair<int, Move>& a, const std::pair<int, Move>& b) {
-        return a.first > b.first; // Sortiraj opadajuće po skoru
-    });
-
-    for (size_t i = 0; i < moves.size(); ++i) {
-        moves[i] = scored_moves[i].second;
-    }
+    );
 }
 
 // --- Glavna Negamax funkcija sa Alfa-Beta odsecanjem (nepromenjena) ---
@@ -176,19 +152,23 @@ int main() {
   
   Board board =
       Board("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1");
+
+    Board board2 = 
+        Board("4r1k1/r4p1p/p3bRpQ/q2pP3/2pP4/Bpn1R3/6PP/1B4K1 w - - 0 1"); // Best move is b1g6
   
   std::cout << "Initial Board:\n";
-  std::cout << board << std::endl;
+  std::cout << board2 << std::endl;
   
   auto start_time = std::chrono::high_resolution_clock::now();
 
-  Move best_move = find_best_move(board, 9); // Pretražujemo do dubine 5
+  Move best_move = find_best_move(board2, 8); // Dubina pretraživanja 8
 
   auto end_time = std::chrono::high_resolution_clock::now();
   auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
 
   std::cout << "\nBest Move found: " << chess::uci::moveToUci(best_move) << std::endl;
   std::cout << "Time taken: " << duration.count() << " ms" << std::endl;
+
 
   return 0;
 }
