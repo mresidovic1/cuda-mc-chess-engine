@@ -8,20 +8,17 @@
 
 using namespace chess;
 
-// --- Constants ---
 const int INFINITY_SCORE = 30000;
 const int MATE_SCORE = 10000;
-const int TT_SIZE = 8388608; // 8M entries (~128MB)
+const int TT_SIZE = 8388608;
 
-// --- Transposition Table Entry ---
 struct TTEntry {
     uint64_t key;
     int depth;
     int score;
-    uint8_t flag; // 0 = exact, 1 = lower bound, 2 = upper bound
+    uint8_t flag;
 };
 
-// --- Global Transposition Table ---
 struct TranspositionTable {
     std::vector<TTEntry> table;
     
@@ -39,7 +36,6 @@ struct TranspositionTable {
     
     void store(uint64_t key, int depth, int score, uint8_t flag) {
         TTEntry* entry = &table[key % TT_SIZE];
-        // Always replace (easier and faster)
         entry->key = key;
         entry->depth = depth;
         entry->score = score;
@@ -49,29 +45,19 @@ struct TranspositionTable {
 
 TranspositionTable tt;
 
-// --- Piece values (remains as it was before the attempted fix) ---
-// Because it is used only in the evaluate function, where the context is different.
-// Assumes PAWN=0, KNIGHT=1, ..., KING=5 in the evaluate loop.
 constexpr std::array<int, 6> piece_values = {100, 300, 320, 500, 900, 0}; 
 
 
-// --- Evaluation function (reverted to previous version) ---
-// This version worked before the issues with order_moves.
 int evaluate(const chess::Board &board) {
   int white_material = 0;
   int black_material = 0;
 
-  // The board.pieces() method accepts a chess::PieceType object.
-  // Since PieceType::underlying is an enum class underlying type, you need to
-  // create a PieceType object from it, as we did before.
   const std::array<chess::PieceType::underlying, 6> piece_types_to_count_underlying = {
       chess::PieceType::underlying::PAWN,   chess::PieceType::underlying::KNIGHT,
       chess::PieceType::underlying::BISHOP, chess::PieceType::underlying::ROOK,
       chess::PieceType::underlying::QUEEN,  chess::PieceType::underlying::KING};
 
   for (const auto &pt_underlying : piece_types_to_count_underlying) {
-    // Assumes mapping to the piece_values array for these enums: PAWN=0 to KING=5.
-    // If not, this will still be an issue, but outside of order_moves.
     int piece_value = piece_values[static_cast<int>(pt_underlying)]; 
 
     white_material +=
@@ -91,14 +77,11 @@ int evaluate(const chess::Board &board) {
   return evaluation;
 }
 
-// --- OPTIMIZED Helper function for move sorting (simple but robust) ---
-// Relies only on isCapture(), typeOf(), and inCheck(), not on PieceType values for indexing.
 void order_moves(std::vector<Move> &moves, Board &board) {
-    // Static scoring only: no make/unmake here.
     auto score_of = [&](const Move &m) -> int {
         int s = 0;
-        if (board.isCapture(m)) s += 2000;        // Captures first
-        if (m.typeOf() == Move::PROMOTION) s += 1500; // Promotions next
+        if (board.isCapture(m)) s += 2000;
+        if (m.typeOf() == Move::PROMOTION) s += 1500;
         return s;
     };
 
@@ -111,9 +94,7 @@ void order_moves(std::vector<Move> &moves, Board &board) {
     );
 }
 
-// --- Main Negamax function with Transposition Table ---
 int negamax(Board &board, int depth, int alpha, int beta, int current_depth_from_root) {
-  // Transposition table lookup (only for depth >= 2)
   uint64_t zobrist_key = 0;
   if (depth >= 2) {
     zobrist_key = board.hash();
@@ -122,13 +103,12 @@ int negamax(Board &board, int depth, int alpha, int beta, int current_depth_from
     if (tt_entry->key == zobrist_key && tt_entry->depth >= depth) {
       int tt_score = tt_entry->score;
       
-      // Adjust mate scores
       if (tt_score > MATE_SCORE - 1000) tt_score -= current_depth_from_root;
       if (tt_score < -MATE_SCORE + 1000) tt_score += current_depth_from_root;
       
-      if (tt_entry->flag == 0) return tt_score; // Exact
-      if (tt_entry->flag == 1 && tt_score >= beta) return tt_score; // Lower bound
-      if (tt_entry->flag == 2 && tt_score <= alpha) return tt_score; // Upper bound
+      if (tt_entry->flag == 0) return tt_score;
+      if (tt_entry->flag == 1 && tt_score >= beta) return tt_score;
+      if (tt_entry->flag == 2 && tt_score <= alpha) return tt_score;
     }
   }
   
@@ -170,7 +150,6 @@ int negamax(Board &board, int depth, int alpha, int beta, int current_depth_from
     }
   }
   
-  // Store in transposition table (only for depth >= 2)
   if (depth >= 2) {
     if (zobrist_key == 0) zobrist_key = board.hash();
     uint8_t flag = (bestValue <= original_alpha) ? 2 : (bestValue >= beta) ? 1 : 0;
@@ -180,7 +159,6 @@ int negamax(Board &board, int depth, int alpha, int beta, int current_depth_from
   return bestValue;
 }
 
-// --- Function for finding the best move ---
 Move find_best_move(Board& board, int max_depth) {
     Movelist movelist;
     movegen::legalmoves(movelist, board);
@@ -222,7 +200,7 @@ int main() {
       Board("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1");
 
     Board board2 = 
-        Board("4r1k1/r4p1p/p3bRpQ/q2pP3/2pP4/Bpn1R3/6PP/1B4K1 w - - 0 1"); // Best move is b1g6
+        Board("4r1k1/r4p1p/p3bRpQ/q2pP3/2pP4/Bpn1R3/6PP/1B4K1 w - - 0 1");
   
   std::cout << "Initial Board:\n";
   std::cout << board2 << std::endl;
