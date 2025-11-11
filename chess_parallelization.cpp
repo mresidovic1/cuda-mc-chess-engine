@@ -5,6 +5,7 @@
 #include <vector>    // Za vector<Move> za sortiranje poteza
 #include <chrono> // Za merenje vremena
 
+#include <iostream>
 
 using namespace chess;
 
