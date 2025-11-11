@@ -1,45 +1,35 @@
 #include "../include/chess.hpp"
 #include <array>
-#include <algorithm> // Za std::sort
+#include <algorithm>
 #include <iostream>
-#include <vector>    // Za vector<Move>
-#include <chrono>    // Za merenje vremena
+#include <vector>
+#include <chrono>
+
+#include <iostream>
 
 using namespace chess;
 
-// --- Konstante ---
 const int INFINITY_SCORE = 30000;
 const int MATE_SCORE = 10000;
 
-// --- Vrednosti figura (ovo ostaje kao sto je bilo pre pokusaja ispravke) ---
-// Jer se koristi samo u evaluate funkciji, gde je kontekst drugaciji.
-// Pretpostavljamo da su PAWN=0, KNIGHT=1, ..., KING=5 u evaluate petlji.
 constexpr std::array<int, 6> piece_values = {100, 300, 320, 500, 900, 0}; 
 
-
-// --- Evaluaciona funkcija (vracena na prethodnu verziju) ---
-// Ova verzija je radila pre problema sa order_moves.
 int evaluate(const chess::Board &board) {
   int white_material = 0;
   int black_material = 0;
 
-  // board.pieces() metod prima chess::PieceType objekat.
-  // Pošto PieceType::underlying je enum class underlying, moraš da
-  // kreiraš PieceType objekat iz njega, kao što smo radili pre.
-  const std::array<chess::PieceType::underlying, 6> piece_types_to_count_underlying = {
-      chess::PieceType::underlying::PAWN,   chess::PieceType::underlying::KNIGHT,
-      chess::PieceType::underlying::BISHOP, chess::PieceType::underlying::ROOK,
-      chess::PieceType::underlying::QUEEN,  chess::PieceType::underlying::KING};
+  const std::array<chess::PieceType, 6> piece_types = {
+      chess::PieceType::PAWN,   chess::PieceType::KNIGHT,
+      chess::PieceType::BISHOP, chess::PieceType::ROOK,
+      chess::PieceType::QUEEN,  chess::PieceType::KING};
 
-  for (const auto &pt_underlying : piece_types_to_count_underlying) {
-    // Pretpostavljamo da je mapiranje na piece_values array za ove enume PAWN=0 do KING=5.
-    // Ako nije, ovo ce i dalje biti problem, ali izvan order_moves.
-    int piece_value = piece_values[static_cast<int>(pt_underlying)]; // Ovo je najosetljiviji dio.
+  for (const auto &pt : piece_types) {
+    int piece_value = piece_values[static_cast<int>(pt)];
 
     white_material +=
-        board.pieces(chess::PieceType(pt_underlying), chess::Color::WHITE).count() * piece_value;
+        board.pieces(pt, chess::Color::WHITE).count() * piece_value;
     black_material +=
-        board.pieces(chess::PieceType(pt_underlying), chess::Color::BLACK).count() * piece_value;
+        board.pieces(pt, chess::Color::BLACK).count() * piece_value;
   }
 
   int evaluation = white_material - black_material;
@@ -53,27 +43,19 @@ int evaluate(const chess::Board &board) {
   return evaluation;
 }
 
-// --- OPTIMIZOVANA Pomoćna funkcija za sortiranje poteza (jednostavna, ali robusna) ---
-// Oslanjamo se samo na isCapture(), typeOf() i inCheck(), ne na PieceType vrednosti za indeksiranje.
-void order_moves(std::vector<Move> &moves, Board &board) {
-    // Static scoring only: no make/unmake here.
-    auto score_of = [&](const Move &m) -> int {
-        int s = 0;
-        if (board.isCapture(m)) s += 2000;        // Captures first
-        if (m.typeOf() == Move::PROMOTION) s += 1500; // Promotions next
-        return s;
-    };
+void order_moves(std::vector<Move> &moves, const Board &board) {
+    std::sort(moves.begin(), moves.end(), [&board](const Move& a, const Move& b) {
+        bool a_is_capture = board.isCapture(a);
+        bool b_is_capture = board.isCapture(b);
 
-    std::stable_sort(
-        moves.begin(),
-        moves.end(),
-        [&](const Move &a, const Move &b) {
-            return score_of(a) > score_of(b);
-        }
-    );
+        if (a_is_capture && !b_is_capture) return true;
+        if (!a_is_capture && b_is_capture) return false;
+
+        return false; 
+    });
 }
 
-// --- Glavna Negamax funkcija sa Alfa-Beta odsecanjem (nepromenjena) ---
+
 int negamax(Board &board, int depth, int alpha, int beta, int current_depth_from_root) {
   Movelist movelist;
   movegen::legalmoves(movelist, board);
@@ -100,20 +82,21 @@ int negamax(Board &board, int depth, int alpha, int beta, int current_depth_from
   
   for (auto &move : moves_to_search) {
     board.makeMove(move);
+
     int score = -negamax(board, depth - 1, -beta, -alpha, current_depth_from_root + 1);
+    
     board.unmakeMove(move);
 
     bestValue = std::max(bestValue, score);
-    alpha = std::max(alpha, bestValue);     
+    alpha = std::max(alpha, bestValue);
 
     if (alpha >= beta) {
-      break;             
+      break;
     }
   }
   return bestValue;
 }
 
-// --- Funkcija za pronalaženje najboljeg poteza (nepromenjena) ---
 Move find_best_move(Board& board, int max_depth) {
     Movelist movelist;
     movegen::legalmoves(movelist, board);
@@ -139,7 +122,7 @@ Move find_best_move(Board& board, int max_depth) {
             best_score = score;
             best_move = move;
         }
-        alpha = std::max(alpha, best_score); 
+        alpha = std::max(alpha, best_score);
     }
     
     std::cout << "Final Score: " << best_score << std::endl;
@@ -161,9 +144,10 @@ int main() {
   
   auto start_time = std::chrono::high_resolution_clock::now();
 
-  Move best_move = find_best_move(board2, 8); // Dubina pretraživanja 8
+  Move best_move = find_best_move(board, 9);
 
   auto end_time = std::chrono::high_resolution_clock::now();
+
   auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
 
   std::cout << "\nBest Move found: " << chess::uci::moveToUci(best_move) << std::endl;
