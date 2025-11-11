@@ -1,35 +1,69 @@
-#include "../include/chess.hpp"
+#include "include/chess.hpp"
 #include <array>
 #include <algorithm>
 #include <iostream>
-#include <vector>
-#include <chrono>
-
-#include <iostream>
+#include <vector>    
+#include <chrono>    
+#include <cstring>  
 
 using namespace chess;
 
 const int INFINITY_SCORE = 30000;
 const int MATE_SCORE = 10000;
+const int TT_SIZE = 8388608;
+
+struct TTEntry {
+    uint64_t key;
+    int depth;
+    int score;
+    uint8_t flag;
+};
+
+struct TranspositionTable {
+    std::vector<TTEntry> table;
+    
+    TranspositionTable() : table(TT_SIZE) {
+        std::memset(table.data(), 0, TT_SIZE * sizeof(TTEntry));
+    }
+    
+    void clear() {
+        std::memset(table.data(), 0, TT_SIZE * sizeof(TTEntry));
+    }
+    
+    TTEntry* probe(uint64_t key) {
+        return &table[key % TT_SIZE];
+    }
+    
+    void store(uint64_t key, int depth, int score, uint8_t flag) {
+        TTEntry* entry = &table[key % TT_SIZE];
+        entry->key = key;
+        entry->depth = depth;
+        entry->score = score;
+        entry->flag = flag;
+    }
+};
+
+TranspositionTable tt;
 
 constexpr std::array<int, 6> piece_values = {100, 300, 320, 500, 900, 0}; 
+
 
 int evaluate(const chess::Board &board) {
   int white_material = 0;
   int black_material = 0;
 
-  const std::array<chess::PieceType, 6> piece_types = {
-      chess::PieceType::PAWN,   chess::PieceType::KNIGHT,
-      chess::PieceType::BISHOP, chess::PieceType::ROOK,
-      chess::PieceType::QUEEN,  chess::PieceType::KING};
+  const std::array<chess::PieceType::underlying, 6> piece_types_to_count_underlying = {
+      chess::PieceType::underlying::PAWN,   chess::PieceType::underlying::KNIGHT,
+      chess::PieceType::underlying::BISHOP, chess::PieceType::underlying::ROOK,
+      chess::PieceType::underlying::QUEEN,  chess::PieceType::underlying::KING};
 
-  for (const auto &pt : piece_types) {
-    int piece_value = piece_values[static_cast<int>(pt)];
+  for (const auto &pt_underlying : piece_types_to_count_underlying) {
+    int piece_value = piece_values[static_cast<int>(pt_underlying)]; 
 
     white_material +=
-        board.pieces(pt, chess::Color::WHITE).count() * piece_value;
+        board.pieces(chess::PieceType(pt_underlying), chess::Color::WHITE).count() * piece_value;
     black_material +=
-        board.pieces(pt, chess::Color::BLACK).count() * piece_value;
+        board.pieces(chess::PieceType(pt_underlying), chess::Color::BLACK).count() * piece_value;
   }
 
   int evaluation = white_material - black_material;
@@ -43,24 +77,46 @@ int evaluate(const chess::Board &board) {
   return evaluation;
 }
 
-void order_moves(std::vector<Move> &moves, const Board &board) {
-    std::sort(moves.begin(), moves.end(), [&board](const Move& a, const Move& b) {
-        bool a_is_capture = board.isCapture(a);
-        bool b_is_capture = board.isCapture(b);
+void order_moves(std::vector<Move> &moves, Board &board) {
+    auto score_of = [&](const Move &m) -> int {
+        int s = 0;
+        if (board.isCapture(m)) s += 2000;
+        if (m.typeOf() == Move::PROMOTION) s += 1500;
+        return s;
+    };
 
-        if (a_is_capture && !b_is_capture) return true;
-        if (!a_is_capture && b_is_capture) return false;
-
-        return false; 
-    });
+    std::stable_sort(
+        moves.begin(),
+        moves.end(),
+        [&](const Move &a, const Move &b) {
+            return score_of(a) > score_of(b);
+        }
+    );
 }
 
-
 int negamax(Board &board, int depth, int alpha, int beta, int current_depth_from_root) {
+  uint64_t zobrist_key = 0;
+  if (depth >= 2) {
+    zobrist_key = board.hash();
+    TTEntry* tt_entry = tt.probe(zobrist_key);
+    
+    if (tt_entry->key == zobrist_key && tt_entry->depth >= depth) {
+      int tt_score = tt_entry->score;
+      
+      if (tt_score > MATE_SCORE - 1000) tt_score -= current_depth_from_root;
+      if (tt_score < -MATE_SCORE + 1000) tt_score += current_depth_from_root;
+      
+      if (tt_entry->flag == 0) return tt_score;
+      if (tt_entry->flag == 1 && tt_score >= beta) return tt_score;
+      if (tt_entry->flag == 2 && tt_score <= alpha) return tt_score;
+    }
+  }
+  
   Movelist movelist;
   movegen::legalmoves(movelist, board);
   
   std::vector<Move> moves_to_search;
+  moves_to_search.reserve(movelist.size());
   for (const auto& m : movelist) {
       moves_to_search.push_back(m);
   }
@@ -79,6 +135,7 @@ int negamax(Board &board, int depth, int alpha, int beta, int current_depth_from
   order_moves(moves_to_search, board);
 
   int bestValue = -INFINITY_SCORE;
+  int original_alpha = alpha;
   
   for (auto &move : moves_to_search) {
     board.makeMove(move);
@@ -94,6 +151,13 @@ int negamax(Board &board, int depth, int alpha, int beta, int current_depth_from
       break;
     }
   }
+  
+  if (depth >= 2) {
+    if (zobrist_key == 0) zobrist_key = board.hash();
+    uint8_t flag = (bestValue <= original_alpha) ? 2 : (bestValue >= beta) ? 1 : 0;
+    tt.store(zobrist_key, depth, bestValue, flag);
+  }
+  
   return bestValue;
 }
 
@@ -102,6 +166,7 @@ Move find_best_move(Board& board, int max_depth) {
     movegen::legalmoves(movelist, board);
     
     std::vector<Move> initial_moves;
+    initial_moves.reserve(movelist.size());
     for (const auto& m : movelist) {
         initial_moves.push_back(m);
     }
@@ -137,14 +202,14 @@ int main() {
       Board("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1");
 
     Board board2 = 
-        Board("4r1k1/r4p1p/p3bRpQ/q2pP3/2pP4/Bpn1R3/6PP/1B4K1 w - - 0 1"); // Best move is b1g6
+        Board("4r1k1/r4p1p/p3bRpQ/q2pP3/2pP4/Bpn1R3/6PP/1B4K1 w - - 0 1");
   
   std::cout << "Initial Board:\n";
   std::cout << board2 << std::endl;
   
   auto start_time = std::chrono::high_resolution_clock::now();
 
-  Move best_move = find_best_move(board, 9);
+  Move best_move = find_best_move(board2, 8); 
 
   auto end_time = std::chrono::high_resolution_clock::now();
 
