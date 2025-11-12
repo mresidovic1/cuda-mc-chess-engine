@@ -12,8 +12,10 @@ dependencies = [
 exe = executable(
   'chess-parallelization',
   'chess_parallelization.cpp',
+  'tests.cpp',
   dependencies : dependencies,
   install : true,
+  cpp_args: ['-O3', '-march=native', '-DNDEBUG']
 )
 
 test('basic', exe)
