@@ -1,47 +1,18 @@
 #include "include/chess.hpp"
+#include "killer_move.h"
+#include "transposition_table.h"
 #include <array>
 #include <algorithm>
 #include <iostream>
 #include <vector>    
 #include <chrono>    
-#include <cstring>  
 
 using namespace chess;
 
 const int INFINITY_SCORE = 30000;
 const int MATE_SCORE = 10000;
-const int TT_SIZE = 8388608;
 
-struct TTEntry {
-    uint64_t key;
-    int depth;
-    int score;
-    uint8_t flag;
-};
-
-struct TranspositionTable {
-    std::vector<TTEntry> table;
-    
-    TranspositionTable() : table(TT_SIZE) {
-        std::memset(table.data(), 0, TT_SIZE * sizeof(TTEntry));
-    }
-    
-    void clear() {
-        std::memset(table.data(), 0, TT_SIZE * sizeof(TTEntry));
-    }
-    
-    TTEntry* probe(uint64_t key) {
-        return &table[key % TT_SIZE];
-    }
-    
-    void store(uint64_t key, int depth, int score, uint8_t flag) {
-        TTEntry* entry = &table[key % TT_SIZE];
-        entry->key = key;
-        entry->depth = depth;
-        entry->score = score;
-        entry->flag = flag;
-    }
-};
+KillerMoves killer_moves;
 
 TranspositionTable tt;
 
@@ -77,11 +48,12 @@ int evaluate(const chess::Board &board) {
   return evaluation;
 }
 
-void order_moves(std::vector<Move> &moves, Board &board) {
+void order_moves(std::vector<Move> &moves, Board &board, int depth) {
     auto score_of = [&](const Move &m) -> int {
         int s = 0;
         if (board.isCapture(m)) s += 2000;
         if (m.typeOf() == Move::PROMOTION) s += 1500;
+        if (killer_moves.isKiller(depth, m)) s += 1000;
         return s;
     };
 
@@ -132,26 +104,62 @@ int negamax(Board &board, int depth, int alpha, int beta, int current_depth_from
     return evaluate(board);
   }
 
-  order_moves(moves_to_search, board);
+  int material_count = board.occ().count();
+  bool in_endgame = (material_count <= 6);
+
+  if (depth >= 3 && !board.inCheck() && !in_endgame && beta < MATE_SCORE - 1000) {
+    const int R = (depth >= 6) ? 3 : 2;
+    const int null_depth = depth - 1 - R;
+    
+    if (null_depth >= 0) {
+      board.makeNullMove();
+      int null_score = -negamax(board, null_depth, -beta, -beta + 1, current_depth_from_root + 1);
+      board.unmakeNullMove();
+      
+      if (null_score >= beta) {
+        return null_score;
+      }
+    }
+  }
+  
+  order_moves(moves_to_search, board, depth);
 
   int bestValue = -INFINITY_SCORE;
   int original_alpha = alpha;
   
+  bool first_move = true;
+
   for (auto &move : moves_to_search) {
+    bool is_capture = board.isCapture(move);
     board.makeMove(move);
 
-    int score = -negamax(board, depth - 1, -beta, -alpha, current_depth_from_root + 1);
-    
+    int score;
+
+    if(first_move) {
+      score = -negamax(board, depth - 1, -beta, -alpha, current_depth_from_root + 1);
+      first_move = false;
+    } else {
+      score = -negamax(board, depth - 1, -alpha - 1, - alpha, current_depth_from_root + 1);
+      if(score > alpha && score < beta) {
+        score = -negamax(board, depth - 1, -beta, -score, current_depth_from_root + 1);
+      }
+    }
+
     board.unmakeMove(move);
 
     bestValue = std::max(bestValue, score);
+
     alpha = std::max(alpha, bestValue);
 
-    if (alpha >= beta) {
+    if(alpha >= beta) {
+      if (!is_capture) {
+        killer_moves.addKiller(depth, move);
+      }
       break;
     }
+
   }
-  
+ 
   if (depth >= 2) {
     if (zobrist_key == 0) zobrist_key = board.hash();
     uint8_t flag = (bestValue <= original_alpha) ? 2 : (bestValue >= beta) ? 1 : 0;
@@ -170,7 +178,7 @@ Move find_best_move(Board& board, int max_depth) {
     for (const auto& m : movelist) {
         initial_moves.push_back(m);
     }
-    order_moves(initial_moves, board);
+    order_moves(initial_moves, board, max_depth);
 
     int best_score = -INFINITY_SCORE;
     Move best_move = Move::NO_MOVE;
