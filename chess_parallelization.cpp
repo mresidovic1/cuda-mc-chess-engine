@@ -203,7 +203,24 @@ Move find_best_move(Board& board, int max_depth) {
     return best_move;
 }
 
-int main() {
+std::string run_engine(Board& board, int depth = 8){
+  attacks::initAttacks();
+  std::cout << "Initial Board:\n";
+  std::cout << board << std::endl;
+
+  auto start_time = std::chrono::high_resolution_clock::now();
+
+  Move best_move = find_best_move(board, depth); // Search to depth 8
+
+  auto end_time = std::chrono::high_resolution_clock::now();
+  auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
+
+  std::cout << "\nBest Move found: " << chess::uci::moveToUci(best_move) << std::endl;
+  std::cout << "Time taken: " << duration.count() << " ms" << std::endl;
+  return chess::uci::moveToUci(best_move);
+}
+
+/*int main() {
   attacks::initAttacks();
   
   Board board =
@@ -228,4 +245,4 @@ int main() {
 
 
   return 0;
-}
+}*/
