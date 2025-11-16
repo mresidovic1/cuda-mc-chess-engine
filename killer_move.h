@@ -1,3 +1,6 @@
+#ifndef KILLER_MOVE_H
+#define KILLER_MOVE_H
+
 #include "include/chess.hpp"
 
 using namespace chess;
@@ -25,3 +28,4 @@ struct KillerMoves {
     }
 };
 
+#endif // KILLER_MOVE_H

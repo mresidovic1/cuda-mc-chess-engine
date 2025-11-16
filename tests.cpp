@@ -2,6 +2,7 @@
 #include <cassert>
 #include <iostream>
 #include <string>
+#include <chrono>
 
 int total = 0;
 int passed = 0;
@@ -20,10 +21,13 @@ static bool run_best_move_test(const char* name,
   std::cout << "Running: " << name << "\n";
   chess::Board b(fen);
 
-  std::string got = run_engine(b, 9); // Default depth is 8
+  auto start = std::chrono::high_resolution_clock::now();
+  std::string got = run_engine(b, 14); // Depth 14
+  auto end = std::chrono::high_resolution_clock::now();
+  auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
 
   std::cout << "FEN: " << fen << "\nExpected: " << expected_uci
-            << "\nGot: " << got << "\n\n";
+            << "\nGot: " << got << "\nTest time: " << duration << " ms\n\n";
 
   return got == std::string(expected_uci);
 }

@@ -7,15 +7,17 @@ project(
 )
 
 dependencies = [
+  dependency('openmp', required: true),
 ]
 
 exe = executable(
   'chess-parallelization',
-  'chess_parallelization.cpp',
+  'chess_engine_optimized.cpp',
   'tests.cpp',
   dependencies : dependencies,
   install : true,
-  cpp_args: ['-O3', '-march=native', '-DNDEBUG']
+  cpp_args: ['-O3', '-march=native', '-DNDEBUG', '-fopenmp'],
+  link_args: ['-fopenmp']
 )
 
 test('basic', exe)
