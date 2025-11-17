@@ -57,7 +57,7 @@ Square findLeastValuableAttacker(Bitboard attackers, Color color, Board &board) 
   return Square::NO_SQ;
 }
 
-// Statice Exchange Evaluation - e sitimation of the net material outcome of a capture sequence
+// Static Exchange Evaluation - estimation of the net material outcome of a capture sequence
 int SEE(Move move, Board &board) {
   Square from_sq = move.from();
   Square to_sq = move.to();
