@@ -1,7 +1,7 @@
 #include "include/chess.hpp"
 
 using namespace chess;
-
+// Games usually do not go over 20-30 plies
 const int MAX_DEPTH = 64;
 struct KillerMoves {
     Move killers[MAX_DEPTH][2];

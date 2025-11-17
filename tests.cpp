@@ -20,7 +20,7 @@ static bool run_best_move_test(const char* name,
   std::cout << "Running: " << name << "\n";
   chess::Board b(fen);
 
-  std::string got = run_engine(b, 9); // Default depth is 8
+  std::string got = run_engine(b, 12); 
 
   std::cout << "FEN: " << fen << "\nExpected: " << expected_uci
             << "\nGot: " << got << "\n\n";
