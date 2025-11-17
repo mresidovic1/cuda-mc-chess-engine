@@ -6,8 +6,6 @@
 
 using namespace chess;
 
-// History heuristic: tracks how successful moves have been
-
 constexpr int HISTORY_SIZE = 64;  
 constexpr int HISTORY_MAX = 32767;
 constexpr int HISTORY_MIN = -32768;
