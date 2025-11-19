@@ -165,6 +165,17 @@ int quiescence(Board &board, int alpha, int beta, int current_depth_from_root) {
   if (current_depth_from_root >= MAX_QUIESCENCE_DEPTH) {
     return evaluate(board);
   }
+
+  // Was missing a check for mate and stalemate
+  Movelist all_moves;
+  movegen::legalmoves(all_moves, board);
+  
+  if (all_moves.empty()) {
+    if (board.inCheck()) {
+      return -MATE_SCORE + current_depth_from_root;
+    }
+    return 0;  
+  }
   
   // Stand pat - if the current capture path leads to a worse position, bail out
   int stand_pat = evaluate(board);
@@ -672,13 +683,15 @@ int main() {
     Board board2 = 
         Board("2k2bnr/p1r2pp1/1pQp2q1/7p/4PPn1/2N1B3/PPP1BP1P/2KR3R w - - 1 16");
 
+    Board board3 = Board("rnr5/p4p1k/bp1qp2p/3pP3/Pb1N1Q2/1P3NPB/5P2/R3R1K1 w - - 5 23");
+
   
   std::cout << "Initial Board:\n";
   std::cout << board2 << std::endl;
   
   auto start_time = std::chrono::high_resolution_clock::now();
 
-  Move best_move = find_best_move(board2, 14, 0); 
+  Move best_move = find_best_move(board3, 14, 0); 
 
   auto end_time = std::chrono::high_resolution_clock::now();
 
