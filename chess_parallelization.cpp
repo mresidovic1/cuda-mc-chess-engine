@@ -256,6 +256,7 @@ void order_moves(std::vector<Move> &moves, Board &board, int depth, Move tt_move
 }
 
 int negamax(Board &board, int depth, int alpha, int beta, int current_depth_from_root, int extension_count = 0, int prev_static_eval = INFINITY_SCORE) {
+  // Safety check for infinite recursion
   if (current_depth_from_root > MAX_SEARCH_DEPTH) {
     return evaluate(board);
   }
@@ -275,10 +276,7 @@ int negamax(Board &board, int depth, int alpha, int beta, int current_depth_from
       }
 
       if (tt_entry->depth >= depth) {
-        int tt_score = tt_entry->score;
-        
-        if (tt_score > MATE_SCORE - 1000) tt_score -= current_depth_from_root;
-        if (tt_score < -MATE_SCORE + 1000) tt_score += current_depth_from_root;
+        int tt_score = tt_entry->score;       
         
         if (tt_entry->flag == 0) return tt_score;
         if (tt_entry->flag == 1 && tt_score >= beta) return tt_score;
@@ -538,7 +536,10 @@ int negamax(Board &board, int depth, int alpha, int beta, int current_depth_from
     uint8_t flag = (bestValue <= original_alpha) ? 2 : (bestValue >= beta) ? 1 : 0;
     Move move_to_store = (bestMove != Move::NO_MOVE) ? bestMove : tt_move;
     int eval_to_store = (static_eval != INFINITY_SCORE && static_eval != -INFINITY_SCORE) ? static_eval : 30001;
-    tt.store(zobrist_key, depth, bestValue, flag, move_to_store, eval_to_store);
+    int score_to_store = bestValue;
+    if (bestValue > MATE_SCORE - 1000) score_to_store += current_depth_from_root;
+    else if (bestValue < -MATE_SCORE + 1000) score_to_store -= current_depth_from_root;
+    tt.store(zobrist_key, depth, score_to_store, flag, move_to_store, eval_to_store);
   }
   
   return bestValue;
@@ -680,12 +681,13 @@ Move find_best_move(Board& board, int max_depth, int time_limit_ms = 0) {
 int main() {
   attacks::initAttacks();
 
-    Board board2 = 
-        Board("2k2bnr/p1r2pp1/1pQp2q1/7p/4PPn1/2N1B3/PPP1BP1P/2KR3R w - - 1 16");
+  Board board2 = 
+      Board("2k2bnr/p1r2pp1/1pQp2q1/7p/4PPn1/2N1B3/PPP1BP1P/2KR3R w - - 1 16");
 
-    Board board3 = Board("rnr5/p4p1k/bp1qp2p/3pP3/Pb1N1Q2/1P3NPB/5P2/R3R1K1 w - - 5 23");
+  Board board3 = Board("rnr5/p4p1k/bp1qp2p/3pP3/Pb1N1Q2/1P3NPB/5P2/R3R1K1 w - - 5 23");
 
-  
+    // Board board4 = Board("rn3rk1/p7/bp2p2p/1q1pPp1Q/P2Nn3/1Pb2NPP/5PB1/3RR1K1 w - - 2 23");
+
   std::cout << "Initial Board:\n";
   std::cout << board2 << std::endl;
   
