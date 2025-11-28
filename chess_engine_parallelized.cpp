@@ -23,30 +23,26 @@
 using namespace chess;
 using namespace chess_engine;
 
+// --- DATA STRUCTURES ---
 struct ScoredMove {
     Move move;
     int score;
-    
-    // Operator< for sorting
     bool operator>(const ScoredMove& other) const {
         return score > other.score;
     }
 };
 
 // --- GLOBAL SHARED DATA ---
-TTParallel tt(512); // 512 MB Transposition Table
-HistoryTable history; // Shared History (Racy updates accepted)
+TTParallel tt(512); 
+HistoryTable history; 
 
 // --- THREAD LOCAL STORAGE ---
-// Vector resized in main/initialization
 std::vector<ThreadLocalData> tld_store;
 
-// Optimized Evaluate - Unrolled & Hardware Popcount
-// Removing the loop over PieceTypes significantly reduces branch mispredictions.
+// --- EVALUATION ---
 int evaluate(const Board &board) {
     int evaluation = 0;
     
-    // Explicit calls prevent any array iteration issues
     Bitboard wp = board.pieces(PieceType::PAWN, Color::WHITE);
     Bitboard bp = board.pieces(PieceType::PAWN, Color::BLACK);
     Bitboard wn = board.pieces(PieceType::KNIGHT, Color::WHITE);
@@ -84,60 +80,43 @@ int evaluate(const Board &board) {
 inline Square findLeastValuableAttacker(Bitboard attackers, Color color, const Board &board) {
     if ((attackers & board.pieces(PieceType::PAWN, color))) 
         return (attackers & board.pieces(PieceType::PAWN, color)).lsb();
-        
     if ((attackers & board.pieces(PieceType::KNIGHT, color))) 
         return (attackers & board.pieces(PieceType::KNIGHT, color)).lsb();
-        
     if ((attackers & board.pieces(PieceType::BISHOP, color))) 
         return (attackers & board.pieces(PieceType::BISHOP, color)).lsb();
-        
     if ((attackers & board.pieces(PieceType::ROOK, color))) 
         return (attackers & board.pieces(PieceType::ROOK, color)).lsb();
-        
     if ((attackers & board.pieces(PieceType::QUEEN, color))) 
         return (attackers & board.pieces(PieceType::QUEEN, color)).lsb();
-        
     if ((attackers & board.pieces(PieceType::KING, color))) 
         return (attackers & board.pieces(PieceType::KING, color)).lsb();
-    
     return Square::NO_SQ;
 }
 
-// Optimized SEE (unchanged logic, just ensuring it compiles with new helper)
 int SEE(Move move, Board &board) {
     Square from_sq = move.from();
     Square to_sq = move.to();
     Bitboard occupied = board.occ();
     PieceType victim_type;
 
-    // 1. Determine Victim safely
     if (move.typeOf() == Move::ENPASSANT) {
         victim_type = PieceType::PAWN;
         Square ep_square = board.enpassantSq();
-        
-        // If the move says En Passant, but the board has no EP square set 
-        // (e.g. TT collision or pseudo-legal generation issue), this would crash.
         if (ep_square == Square::NO_SQ) return 0; 
-        
-        // Update occupancy for EP
         occupied ^= Bitboard::fromSquare(from_sq) ^ Bitboard::fromSquare(ep_square);
     } else {
         victim_type = board.at<PieceType>(to_sq);
-        // Standard capture occupancy update
         occupied ^= Bitboard::fromSquare(from_sq) ^ Bitboard::fromSquare(to_sq);
     }
 
     if (victim_type == PieceType::NONE) return 0;
 
-    // Initialize gain array
     int gain[32] = {};
     gain[0] = piece_values[static_cast<int>(victim_type)];
 
-    // Initial attackers
     Bitboard attackers_white = attacks::attackers(board, Color::WHITE, to_sq);
     Bitboard attackers_black = attacks::attackers(board, Color::BLACK, to_sq);
 
-    // Remove the piece that just moved
     Color attacker_color = board.at(from_sq).color();
     if (attacker_color == Color::WHITE) attackers_white ^= Bitboard::fromSquare(from_sq);
     else attackers_black ^= Bitboard::fromSquare(from_sq);
@@ -153,19 +132,15 @@ int SEE(Move move, Board &board) {
         if (attacker_sq == Square::NO_SQ) break;
 
         PieceType attacker_pt = board.at<PieceType>(attacker_sq);
-        
         if (attacker_pt == PieceType::NONE) break;
 
         gain[depth] = -piece_values[static_cast<int>(attacker_pt)] + gain[depth - 1];
-        
         occupied ^= Bitboard::fromSquare(attacker_sq);
 
         if (side == Color::WHITE) attackers_white ^= Bitboard::fromSquare(attacker_sq);
         else attackers_black ^= Bitboard::fromSquare(attacker_sq);
 
-        // Recalculate X-Ray attackers
         Bitboard all_sliders = board.pieces(PieceType::BISHOP) | board.pieces(PieceType::QUEEN) | board.pieces(PieceType::ROOK);
-
         if (all_sliders & occupied) {
             Bitboard white_pawns = board.pieces(PieceType::PAWN, Color::WHITE) & occupied;
             Bitboard black_pawns = board.pieces(PieceType::PAWN, Color::BLACK) & occupied;
@@ -192,7 +167,6 @@ int SEE(Move move, Board &board) {
                               (attacks::rook(to_sq, occupied) & (black_rooks | black_queens)) |
                               (attacks::king(to_sq) & black_kings);
         }
-
         side = ~side;
         depth++;
     }
@@ -205,10 +179,8 @@ int SEE(Move move, Board &board) {
 
 int quiescence(Board &board, int alpha, int beta, int current_depth_from_root, ThreadLocalData* tld) {
     if (tld) tld->nodes_searched++;
-
     if (current_depth_from_root >= MAX_QUIESCENCE_DEPTH) return evaluate(board);
 
-    // Stand pat
     int stand_pat = evaluate(board);
     if (stand_pat >= beta) return beta;
     if (stand_pat > alpha) alpha = stand_pat;
@@ -217,7 +189,6 @@ int quiescence(Board &board, int alpha, int beta, int current_depth_from_root, T
     movegen::legalmoves<movegen::MoveGenType::CAPTURE>(captures, board);
     if (captures.empty()) return stand_pat;
 
-    // Sort by SEE
     std::vector<Move> caps;
     caps.reserve(captures.size());
     for(const auto& m : captures) caps.push_back(m);
@@ -240,12 +211,8 @@ int quiescence(Board &board, int alpha, int beta, int current_depth_from_root, T
     return alpha;
 }
 
-// Added ThreadLocalData parameter
 void order_moves(std::vector<Move> &moves, Board &board, int depth, ThreadLocalData* tld, Move tt_move = Move::NO_MOVE) {
     Color side_to_move = board.sideToMove();
-    
-    // 1. Calculate scores for all moves upfront (Snapshotting)
-    // This prevents race conditions where history changes mid-sort
     std::vector<ScoredMove> scored_moves;
     scored_moves.reserve(moves.size());
     
@@ -262,37 +229,27 @@ void order_moves(std::vector<Move> &moves, Board &board, int depth, ThreadLocalD
         scored_moves.push_back({m, s});
     }
 
-    // 2. Sort the snapshots
-    // std::sort is faster than stable_sort and safe here because we own the structs
     std::sort(scored_moves.begin(), scored_moves.end(), [](const ScoredMove& a, const ScoredMove& b) {
         return a.score > b.score;
     });
 
-    // 3. Put them back into the move list
     for (size_t i = 0; i < moves.size(); i++) {
         moves[i] = scored_moves[i].move;
     }
 }
 
-// Thread-safe Negamax
-// 1. Accepts ThreadLocalData pointer
-// 2. Uses TTParallel
 int negamax(Board &board, int depth, int alpha, int beta, int ply, 
             int extension_count, int prev_static_eval, ThreadLocalData* tld) {
     
-    // Periodically check if we need to abort (optional, good for time management)
     if (tld) tld->nodes_searched++;
-
     if (ply > MAX_SEARCH_DEPTH) return evaluate(board);
 
     uint64_t zobrist_key = 0;
     Move tt_move = Move::NO_MOVE;
 
-    // --- TT PROBE ---
     if (depth >= 1) {
         zobrist_key = board.hash();
         TTEntryParallel* entry = tt.probe(zobrist_key);
-        
         if (entry->key == zobrist_key) {
             tt_move = entry->bestMove;
             if (entry->depth >= depth) {
@@ -308,7 +265,6 @@ int negamax(Board &board, int depth, int alpha, int beta, int ply,
     movegen::legalmoves(movelist, board);
 
     if (tt_move != Move::NO_MOVE) {
-        // Verify legality of TT move (hash collision protection)
         bool legal = false;
         for(const auto& m : movelist) if(m == tt_move) { legal = true; break; }
         if(!legal) tt_move = Move::NO_MOVE;
@@ -319,15 +275,12 @@ int negamax(Board &board, int depth, int alpha, int beta, int ply,
         return 0;
     }
 
-    if (depth == 0) {
-        return quiescence(board, alpha, beta, ply, tld);
-    }
+    if (depth == 0) return quiescence(board, alpha, beta, ply, tld);
 
     bool in_check = board.inCheck();
     int material_count = board.occ().count();
     bool in_endgame = (material_count <= 6);
 
-    // Static Eval Logic with TT
     int static_eval = INFINITY_SCORE;
     bool tt_hit_for_eval = false;
     bool improving = false;
@@ -344,7 +297,6 @@ int negamax(Board &board, int depth, int alpha, int beta, int ply,
         if (static_eval == INFINITY_SCORE) static_eval = evaluate(board);
         improving = (prev_static_eval != INFINITY_SCORE) && (static_eval > prev_static_eval);
 
-        // Razoring
         if (depth <= 3 && static_eval < alpha - RAZOR_MARGIN_BASE - RAZOR_MARGIN_DEPTH * depth * depth) {
              return quiescence(board, alpha, beta, ply, tld);
         }
@@ -352,7 +304,6 @@ int negamax(Board &board, int depth, int alpha, int beta, int ply,
         static_eval = -INFINITY_SCORE;
     }
 
-    // Null Move Pruning
     bool allow_null_move = depth >= 3 && !in_check && !in_endgame && beta < MATE_SCORE - 1000 &&
                            board.hasNonPawnMaterial(board.sideToMove()) && static_eval != -INFINITY_SCORE &&
                            (static_eval - 100) >= beta;
@@ -372,7 +323,6 @@ int negamax(Board &board, int depth, int alpha, int beta, int ply,
     moves_to_search.reserve(movelist.size());
     for (const auto& m : movelist) moves_to_search.push_back(m);
 
-    // Use TLD for killer moves
     order_moves(moves_to_search, board, depth, tld, tt_move);
 
     int bestValue = -INFINITY_SCORE;
@@ -392,13 +342,15 @@ int negamax(Board &board, int depth, int alpha, int beta, int ply,
         bool is_killer = tld->killer_moves.isKiller(depth, move);
         bool gives_check = false;
 
-        // Check extensions logic
         if (depth >= CHECK_EXTENSION_DEPTH && extension_count < MAX_CHECK_EXTENSIONS) {
              gives_check = (board.givesCheck(move) != CheckType::NO_CHECK);
         }
 
-        // Futility Pruning
-        if (!in_check && static_eval != -INFINITY_SCORE && !is_capture && !is_promotion && !gives_check) {
+        // --- CRITICAL FIX FOR 30000 SCORE BUG ---
+        // We added (move_count > 0). 
+        // This ensures we NEVER prune the first move.
+        // If we prune ALL moves, bestValue remains -INFINITY, causing the bug.
+        if (move_count > 0 && !in_check && static_eval != -INFINITY_SCORE && !is_capture && !is_promotion && !gives_check) {
             int futility_margin = FUTILITY_MARGIN_BASE * depth;
             if (tt_hit_for_eval) futility_margin -= FUTILITY_MARGIN_DEPTH_MULT;
             if (improving) futility_margin = futility_margin * 5 / 4;
@@ -410,7 +362,6 @@ int negamax(Board &board, int depth, int alpha, int beta, int ply,
 
         board.makeMove(move);
 
-        // LMR
         int search_depth;
         bool should_extend = gives_check && depth >= CHECK_EXTENSION_DEPTH && extension_count < MAX_CHECK_EXTENSIONS;
         int new_extension_count = should_extend ? extension_count + 1 : extension_count;
@@ -443,7 +394,6 @@ int negamax(Board &board, int depth, int alpha, int beta, int ply,
             score = -negamax(board, search_depth, -beta, -alpha, ply + 1, new_extension_count, -new_static_eval, tld);
             first_move = false;
         } else {
-            // PVS (Principal Variation Search)
             score = -negamax(board, search_depth, -alpha - 1, -alpha, ply + 1, new_extension_count, INFINITY_SCORE, tld);
             if (score > alpha && score < beta) {
                 int re_search_depth = should_extend ? depth : depth - 1;
@@ -464,7 +414,6 @@ int negamax(Board &board, int depth, int alpha, int beta, int ply,
         }
 
         if (alpha >= beta) {
-            // Killer Moves update (Thread Local)
             if (!is_capture && move.typeOf() != Move::PROMOTION) {
                 tld->killer_moves.addKiller(depth, move);
             }
@@ -473,12 +422,10 @@ int negamax(Board &board, int depth, int alpha, int beta, int ply,
         move_count++;
     }
 
-    // History Heuristic (Shared Table)
     if (bestMove != Move::NO_MOVE && bestMove_is_quiet && (bestValue >= beta || bestValue > original_alpha)) {
         int bonus = std::min(121 * depth - 77, 1633);
         if (bestMove == tt_move && tt_move != Move::NO_MOVE) bonus += 375;
         
-        // Potential race condition here is intentional/accepted in chess engines
         history.update(bestMove, side_to_move, bonus);
 
         if (bestValue >= beta && !quiets_searched.empty()) {
@@ -493,7 +440,6 @@ int negamax(Board &board, int depth, int alpha, int beta, int ply,
         }
     }
 
-    // Store in TT (Parallel)
     if (depth >= 1) {
         if (zobrist_key == 0) zobrist_key = board.hash();
         uint8_t flag = (bestValue <= original_alpha) ? 2 : (bestValue >= beta) ? 1 : 0;
@@ -506,12 +452,10 @@ int negamax(Board &board, int depth, int alpha, int beta, int ply,
     return bestValue;
 }
 
-// --- ROOT PARALLELIZATION ---
 Move find_best_move(Board& board, int max_depth, int time_limit_ms = 0) {
     using namespace std::chrono;
     auto start_time = high_resolution_clock::now();
     
-    // Initialize Thread Pool if needed
     static bool threads_init = false;
     if (!threads_init) {
         int max_threads = omp_get_max_threads();
@@ -520,8 +464,8 @@ Move find_best_move(Board& board, int max_depth, int time_limit_ms = 0) {
         threads_init = true;
     }
 
-    // Clear data for new search
     for(auto& t : tld_store) t.clear();
+    tt.clear();
     tt.new_search();
     history.clear();
 
@@ -529,7 +473,6 @@ Move find_best_move(Board& board, int max_depth, int time_limit_ms = 0) {
     int best_score_overall = -INFINITY_SCORE;
 
     for (int depth = 1; depth <= max_depth; depth++) {
-        // Time check
         if (time_limit_ms > 0) {
             auto current_time = high_resolution_clock::now();
             auto elapsed = duration_cast<milliseconds>(current_time - start_time).count();
@@ -539,7 +482,6 @@ Move find_best_move(Board& board, int max_depth, int time_limit_ms = 0) {
             }
         }
 
-        // Generate Root Moves
         Movelist movelist;
         movegen::legalmoves(movelist, board);
         if (movelist.empty()) break;
@@ -547,24 +489,17 @@ Move find_best_move(Board& board, int max_depth, int time_limit_ms = 0) {
         std::vector<Move> root_moves;
         for (const auto& m : movelist) root_moves.push_back(m);
 
-        // Sort Root Moves (Use previous best, then static eval)
-        // We use thread 0's data for this preliminary sort
         Move prev_best = (depth > 1) ? best_move_overall : Move::NO_MOVE;
         order_moves(root_moves, board, depth, &tld_store[0], prev_best);
 
-        // --- PARALLEL SEARCH LOOP ---
         std::atomic<int> alpha(-INFINITY_SCORE);
         int beta = INFINITY_SCORE;
         
-        // Prepare to capture results
         std::vector<int> root_scores(root_moves.size(), -INFINITY_SCORE);
-        std::vector<Move> root_pv(root_moves.size(), Move::NO_MOVE);
 
-        // Dynamic schedule helps balance load as some moves fail-high quickly
         #pragma omp parallel for schedule(dynamic, 1)
         for (int i = 0; i < (int)root_moves.size(); i++) {
             int tid = omp_get_thread_num();
-            // Handle edge case if OMP gives more threads than we allocated
             if (tid >= tld_store.size()) tid = 0; 
             ThreadLocalData* tld = &tld_store[tid];
 
@@ -572,19 +507,12 @@ Move find_best_move(Board& board, int max_depth, int time_limit_ms = 0) {
             Move move = root_moves[i];
             
             local_board.makeMove(move);
-
-            // Access shared alpha safely for PVS window
             int local_alpha = alpha.load(std::memory_order_relaxed);
-            
-            // Search
             int score = -negamax(local_board, depth - 1, -beta, -local_alpha, 1, 0, INFINITY_SCORE, tld);
-
             local_board.unmakeMove(move);
 
-            // Store result
             root_scores[i] = score;
 
-            // Update global alpha if we found something better
             int current_alpha = alpha.load(std::memory_order_relaxed);
             while (score > current_alpha) {
                 if (alpha.compare_exchange_weak(current_alpha, score)) {
@@ -593,7 +521,6 @@ Move find_best_move(Board& board, int max_depth, int time_limit_ms = 0) {
             }
         }
 
-        // --- AGGREGATE RESULTS ---
         int iteration_best_score = -INFINITY_SCORE;
         Move iteration_best_move = Move::NO_MOVE;
 
@@ -607,7 +534,6 @@ Move find_best_move(Board& board, int max_depth, int time_limit_ms = 0) {
         best_score_overall = iteration_best_score;
         best_move_overall = iteration_best_move;
 
-        // Logging
         auto current_time = high_resolution_clock::now();
         auto elapsed = duration_cast<milliseconds>(current_time - start_time).count();
         uint64_t total_nodes = 0;
@@ -631,52 +557,34 @@ Move find_best_move(Board& board, int max_depth, int time_limit_ms = 0) {
 std::string run_engine(Board& board, int depth = 20) {
     attacks::initAttacks();
     
-    // 1. Thread Initialization
-    // We ensure the vector is resized to hold data for all OMP threads
     static bool initialized = false;
     if (!initialized) {
         int num_threads = omp_get_max_threads();
-        // Optional: Cap threads if you have a defined MAX_THREADS
-        // if (num_threads > MAX_THREADS) num_threads = MAX_THREADS;
-        
         tld_store.resize(num_threads);
         for (int i = 0; i < num_threads; i++) {
             tld_store[i] = ThreadLocalData(i);
         }
-        // explicit OMP setting isn't strictly required if environment matches, 
-        // but good for safety
         omp_set_num_threads(num_threads);
         initialized = true;
     }
     
-    // 2. Clean State
-    // Clear thread local stats (nodes searched, killers)
     for (auto& td : tld_store) td.clear();
-    // Age the TT so we prefer new results
+    tt.clear();
     tt.new_search(); 
-    // Clear history heuristics for a fresh search
     history.clear(); 
     
     std::cout << "Initial Board:\n" << board << std::endl;
 
-    // 3. Execution
     auto start = std::chrono::high_resolution_clock::now();
-    
-    // We pass 0 as time_limit to indicate we want to search by Depth
     Move best_move = find_best_move(board, depth, 0); 
-    
     auto end = std::chrono::high_resolution_clock::now();
     auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
 
-    // 4. Aggregation
-    // Sum up nodes searched from all threads
     uint64_t total_nodes = 0;
     for (const auto& td : tld_store) total_nodes += td.nodes_searched;
     
-    // Avoid divide by zero
     uint64_t nps = (duration.count() > 0) ? (total_nodes * 1000 / duration.count()) : 0;
 
-    // 5. Reporting
     std::cout << "\nBest Move: " << chess::uci::moveToUci(best_move) << std::endl;
     std::cout << "Time: " << duration.count() << " ms" << std::endl;
     std::cout << "Nodes: " << total_nodes << std::endl;
@@ -687,15 +595,10 @@ std::string run_engine(Board& board, int depth = 20) {
 }
 
 #ifndef UNIT_TESTS 
-
 int main() {
     attacks::initAttacks();
-
-    Board board("2RR1K2/1B3PPq/5Q2/4P3/7n/Ppp1b3/p5pp/3rk2N b - - 0 1");
-    
+    Board board("rnr5/p4p1k/bp1qp2p/3pP3/Pb1N1Q2/1P3NPB/5P2/R3R1K1 w - - 5 23");
     run_engine(board, 14);
-
     return 0;
 }
-
-#endif // UNIT_TESTS
+#endif

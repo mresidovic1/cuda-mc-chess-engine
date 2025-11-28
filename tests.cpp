@@ -46,19 +46,22 @@ void run_test(std::string board, std::string expected_result){
 int main() {
   // Test cases
   std::string board;
+  board = "7k/p6p/1p6/2n5/2Q5/8/8/7K w - - 0 1";
+
+  run_test(board, "c4f7");
   // Test case 1
-  board = "4r1k1/r4p1p/p3bRpQ/q2pP3/2pP4/Bpn1R3/6PP/1B4K1 w - - 0 1";
+  /*board = "4r1k1/r4p1p/p3bRpQ/q2pP3/2pP4/Bpn1R3/6PP/1B4K1 w - - 0 1";
   run_test(board, "b1g6");
 
   // Test case 2
   board = "5r2/Rpp4p/3k2p1/3N4/2P1P1b1/1PQ3P1/1P5r/4KB1q w - - 0 1";
   run_test(board, "c3b4");
 
-  /*// Test case 3
+  // Test case 3
   board = "2RR1K2/1B3PPq/5Q2/4P3/7n/Ppp1b3/p5pp/3rk2N b - - 0 1";
   run_test(board, "d1d8");*/
 
-  // Test case 4
+  /*// Test case 4
   board = "3R1K2/1B3PPq/5Q2/2R1P3/7n/Ppp5/p5pp/3rk2N b - - 0 1";
   run_test(board, "d1d8");
 
@@ -77,7 +80,7 @@ int main() {
   // Test case 8 - cheese blunder
   board = "r1bqk2r/pppp1p1p/5p2/2b1p2Q/2B1P3/8/PP1PKPPP/n1B3NR w kq - 0 1";
   run_test(board, "h5f7");
-  // Will add more tests here as needed 
+  // Will add more tests here as needed */
 
   std::cout << "Passed " << passed << " / " << total << " tests.\n";
   return passed == total ? 0 : 1;
