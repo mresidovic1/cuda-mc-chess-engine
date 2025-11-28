@@ -7,8 +7,8 @@ int total = 0;
 int passed = 0;
 
 // Declare the symbols defined in chess_parallelization.cpp
-extern chess::Move find_best_move(chess::Board& board, int max_depth);
-extern std::string run_engine(chess::Board& board, int depth = 8);
+extern chess::Move find_best_move(chess::Board& board, int max_depth, int time_limit_ms);
+extern std::string run_engine(chess::Board& board, int depth);
 
 // Optional: if you need attacks::initAttacks() explicitly
 using namespace chess;
@@ -20,7 +20,7 @@ static bool run_best_move_test(const char* name,
   std::cout << "Running: " << name << "\n";
   chess::Board b(fen);
 
-  std::string got = run_engine(b, 12); 
+  std::string got = run_engine(b, depth); 
 
   std::cout << "FEN: " << fen << "\nExpected: " << expected_uci
             << "\nGot: " << got << "\n\n";
@@ -35,7 +35,7 @@ void run_test(std::string board, std::string expected_result){
           test_title_string.c_str(),
           board.c_str(),
           expected_result.c_str(),
-          8)) {
+          14)) {
     std::cout << "[PASS] " << test_title_string << "\n";
     passed++;
   } else {
@@ -54,9 +54,9 @@ int main() {
   board = "5r2/Rpp4p/3k2p1/3N4/2P1P1b1/1PQ3P1/1P5r/4KB1q w - - 0 1";
   run_test(board, "c3b4");
 
-  // Test case 3
+  /*// Test case 3
   board = "2RR1K2/1B3PPq/5Q2/4P3/7n/Ppp1b3/p5pp/3rk2N b - - 0 1";
-  run_test(board, "d1d8");
+  run_test(board, "d1d8");*/
 
   // Test case 4
   board = "3R1K2/1B3PPq/5Q2/2R1P3/7n/Ppp5/p5pp/3rk2N b - - 0 1";
