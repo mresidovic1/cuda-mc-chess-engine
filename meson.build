@@ -17,7 +17,8 @@ optimized_args = ['-O3', '-march=native', '-DNDEBUG', '-DUNIT_TESTS']
 
 # --- LINKER ARGS (16MB Stack) ---
 # This prevents silent exits due to recursion depth
-stack_args = ['-Wl,--stack,16777216'] 
+# stack_args = ['-Wl,--stack,16777216'] 
+stack_args = ['-Wl,-stack_size,0x1000000'] 
 
 test_exe = executable(
   'chess-tests',

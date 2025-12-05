@@ -5,16 +5,13 @@
 #include <cstring>
 #include "include/chess.hpp"
 
-// Size in MB
-constexpr size_t TT_SIZE_MB = 256;
-
 struct TTEntryParallel {
     uint64_t key;
     chess::Move bestMove;
     int16_t score;
     int16_t staticEval;
     int16_t depth;
-    uint8_t flag; // 0: exact, 1: >= beta (lowerbound), 2: <= alpha (upperbound)
+    uint8_t flag; // 0: exact, 1: >= beta (lowerbound), 2: <= alpha (upperbound) - smanjiti na 2 bita
     uint8_t generation; // For aging (replacement strategy)
 
     TTEntryParallel() 
@@ -28,7 +25,7 @@ private:
     uint8_t current_generation;
 
 public:
-    TTParallel(size_t mb_size = TT_SIZE_MB) : current_generation(0) {
+    TTParallel(size_t mb_size = 512) : current_generation(0) {
         // Calculate number of entries based on size
         size_t entry_count = (mb_size * 1024 * 1024) / sizeof(TTEntryParallel);
         table.resize(entry_count);
@@ -70,10 +67,6 @@ public:
                        (depth >= entry->depth);
 
         if (replace) {
-            // Note: In a strictly safe environment, we would use a spinlock here.
-            // In chess engines, we accept the "torn read/write" risk for performance.
-            // The key is written last or validated, but here we do a direct write.
-            
             entry->key = key;
             entry->bestMove = bestMove;
             entry->depth = (int16_t)depth;

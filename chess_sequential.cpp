@@ -166,7 +166,6 @@ int quiescence(Board &board, int alpha, int beta, int current_depth_from_root) {
     return evaluate(board);
   }
 
-  // Was missing a check for mate and stalemate
   Movelist all_moves;
   movegen::legalmoves(all_moves, board);
   

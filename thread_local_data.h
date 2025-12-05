@@ -12,8 +12,6 @@ struct ThreadLocalData {
     ThreadLocalData(int id = 0) : nodes_searched(0), thread_id(id) {}
 
     void clear() {
-        // We re-initialize killer moves every search or keep them? 
-        // Usually keeping them is fine, but clearing is safer for new games.
         killer_moves = KillerMoves(); 
         nodes_searched = 0;
     }

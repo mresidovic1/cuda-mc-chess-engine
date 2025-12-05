@@ -182,18 +182,29 @@ int quiescence(Board &board, int alpha, int beta, int current_depth_from_root, T
     if (current_depth_from_root >= MAX_QUIESCENCE_DEPTH) return evaluate(board);
 
     int stand_pat = evaluate(board);
-    if (stand_pat >= beta) return beta;
-    if (stand_pat > alpha) alpha = stand_pat;
 
     Movelist captures;
     movegen::legalmoves<movegen::MoveGenType::CAPTURE>(captures, board);
-    if (captures.empty()) return stand_pat;
+
+    if (captures.empty()) {
+        if (board.inCheck()) {
+            Movelist all_moves;
+            movegen::legalmoves(all_moves, board);
+            if (all_moves.empty()) {
+                return -MATE_SCORE + current_depth_from_root; 
+            }
+        }
+        return stand_pat;
+    }
+
+    if (stand_pat >= beta) return beta;
+    if (stand_pat > alpha) alpha = stand_pat;
 
     std::vector<Move> caps;
     caps.reserve(captures.size());
     for(const auto& m : captures) caps.push_back(m);
 
-    std::stable_sort(caps.begin(), caps.end(), [&board](const Move &move1, const Move &move2) {
+    std::sort(caps.begin(), caps.end(), [&board](const Move &move1, const Move &move2) {
         return SEE(move1, board) > SEE(move2, board);
     });
 
@@ -346,10 +357,6 @@ int negamax(Board &board, int depth, int alpha, int beta, int ply,
              gives_check = (board.givesCheck(move) != CheckType::NO_CHECK);
         }
 
-        // --- CRITICAL FIX FOR 30000 SCORE BUG ---
-        // We added (move_count > 0). 
-        // This ensures we NEVER prune the first move.
-        // If we prune ALL moves, bestValue remains -INFINITY, causing the bug.
         if (move_count > 0 && !in_check && static_eval != -INFINITY_SCORE && !is_capture && !is_promotion && !gives_check) {
             int futility_margin = FUTILITY_MARGIN_BASE * depth;
             if (tt_hit_for_eval) futility_margin -= FUTILITY_MARGIN_DEPTH_MULT;
@@ -452,6 +459,109 @@ int negamax(Board &board, int depth, int alpha, int beta, int ply,
     return bestValue;
 }
 
+// Move find_best_move(Board& board, int max_depth, int time_limit_ms = 0) {
+//     using namespace std::chrono;
+//     auto start_time = high_resolution_clock::now();
+    
+//     static bool threads_init = false;
+//     if (!threads_init) {
+//         int max_threads = omp_get_max_threads();
+//         tld_store.resize(max_threads);
+//         for(int i=0; i<max_threads; ++i) tld_store[i] = ThreadLocalData(i);
+//         threads_init = true;
+//     }
+
+//     for(auto& t : tld_store) t.clear();
+//     tt.clear();
+//     tt.new_search();
+//     history.clear();
+
+//     Move best_move_overall = Move::NO_MOVE;
+//     int best_score_overall = -INFINITY_SCORE;
+
+//     for (int depth = 1; depth <= max_depth; depth++) {
+//         if (time_limit_ms > 0) {
+//             auto current_time = high_resolution_clock::now();
+//             auto elapsed = duration_cast<milliseconds>(current_time - start_time).count();
+//             if (elapsed >= time_limit_ms) {
+//                 std::cout << "Time limit reached." << std::endl;
+//                 break;
+//             }
+//         }
+
+//         Movelist movelist;
+//         movegen::legalmoves(movelist, board);
+//         if (movelist.empty()) break;
+
+//         std::vector<Move> root_moves;
+//         for (const auto& m : movelist) root_moves.push_back(m);
+
+//         Move prev_best = (depth > 1) ? best_move_overall : Move::NO_MOVE;
+//         order_moves(root_moves, board, depth, &tld_store[0], prev_best);
+
+//         std::atomic<int> alpha(-INFINITY_SCORE);
+//         int beta = INFINITY_SCORE;
+        
+//         std::vector<int> root_scores(root_moves.size(), -INFINITY_SCORE);
+
+//         #pragma omp parallel for schedule(dynamic, 1)
+//         for (int i = 0; i < (int)root_moves.size(); i++) {
+//             int tid = omp_get_thread_num();
+//             if (tid >= tld_store.size()) tid = 0; 
+//             ThreadLocalData* tld = &tld_store[tid];
+
+//             Board local_board = board;
+//             Move move = root_moves[i];
+            
+//             local_board.makeMove(move);
+//             int local_alpha = alpha.load(std::memory_order_relaxed);
+//             int score = -negamax(local_board, depth - 1, -beta, -local_alpha, 1, 0, INFINITY_SCORE, tld);
+//             local_board.unmakeMove(move);
+
+//             root_scores[i] = score;
+            
+//             // Compare and swap (safe race to update alpha)
+//             int current_alpha = alpha.load(std::memory_order_relaxed);
+//             while (score > current_alpha) {
+//                 if (alpha.compare_exchange_weak(current_alpha, score)) {
+//                     break;
+//                 }
+//             }
+//         }
+
+//         int iteration_best_score = -INFINITY_SCORE;
+//         Move iteration_best_move = Move::NO_MOVE;
+
+//         for (int i = 0; i < (int)root_moves.size(); i++) {
+//             if (root_scores[i] > iteration_best_score) {
+//                 iteration_best_score = root_scores[i];
+//                 iteration_best_move = root_moves[i];
+//             }
+//         }
+
+//         best_score_overall = iteration_best_score;
+//         best_move_overall = iteration_best_move;
+
+//         auto current_time = high_resolution_clock::now();
+//         auto elapsed = duration_cast<milliseconds>(current_time - start_time).count();
+//         uint64_t total_nodes = 0;
+//         for(const auto& t : tld_store) total_nodes += t.nodes_searched;
+//         uint64_t nps = (elapsed > 0) ? (total_nodes * 1000 / elapsed) : 0;
+
+//         std::cout << "info depth " << depth 
+//                   << " score cp " << best_score_overall 
+//                   << " nodes " << total_nodes 
+//                   << " nps " << nps
+//                   << " time " << elapsed
+//                   << " pv " << chess::uci::moveToUci(best_move_overall) 
+//                   << std::endl;
+
+//         if (best_score_overall >= MATE_SCORE - 1000 || best_score_overall <= -MATE_SCORE + 1000) break;
+//     }
+
+//     return best_move_overall;
+// }
+
 Move find_best_move(Board& board, int max_depth, int time_limit_ms = 0) {
     using namespace std::chrono;
     auto start_time = high_resolution_clock::now();
@@ -460,95 +570,134 @@ Move find_best_move(Board& board, int max_depth, int time_limit_ms = 0) {
     if (!threads_init) {
         int max_threads = omp_get_max_threads();
         tld_store.resize(max_threads);
-        for(int i=0; i<max_threads; ++i) tld_store[i] = ThreadLocalData(i);
+        for(int i = 0; i < max_threads; ++i) tld_store[i] = ThreadLocalData(i);
         threads_init = true;
     }
 
     for(auto& t : tld_store) t.clear();
-    tt.clear();
+    // TT MUST NOT BE CLEARED
     tt.new_search();
     history.clear();
 
-    Move best_move_overall = Move::NO_MOVE;
-    int best_score_overall = -INFINITY_SCORE;
+    Movelist movelist;
+    movegen::legalmoves(movelist, board);
+    if (movelist.empty()) return Move::NO_MOVE;
 
-    for (int depth = 1; depth <= max_depth; depth++) {
-        if (time_limit_ms > 0) {
-            auto current_time = high_resolution_clock::now();
-            auto elapsed = duration_cast<milliseconds>(current_time - start_time).count();
-            if (elapsed >= time_limit_ms) {
-                std::cout << "Time limit reached." << std::endl;
+    std::vector<Move> root_moves;
+    root_moves.reserve(movelist.size());
+    for (const auto& m : movelist) root_moves.push_back(m);
+
+    Move best_move_overall = root_moves[0];
+    int best_score_overall = -INFINITY_SCORE;
+    int best_depth_completed = 0;
+    std::mutex result_mutex;
+    std::atomic<bool> stop_search(false);
+
+    int num_threads = omp_get_max_threads();
+
+    // LAZY SMP -  Each thread searches the full tree independently
+    #pragma omp parallel num_threads(num_threads)
+    {
+        int tid = omp_get_thread_num();
+        ThreadLocalData* tld = &tld_store[tid];
+        
+        Board local_board = board;
+        
+        // Stockfish style skip pattern - no need to search all depths, some can be skipped to improve efficiency
+        // Thread 0: depth 1, 2, 3, 4, 5, 6, 7, 8...  (all)
+        // Thread 1: depth 1, 2, 3, 4, 5, 6, 7, 8...  (all)
+        // Thread 2: depth 2, 4, 6, 8, 10...          (even)
+        // Thread 3: depth 1, 3, 5, 7, 9...           (odd)
+        // Thread 6: depth 3, 6, 9, 12...             (every 3rd)
+        constexpr int skipSize[]  = { 1, 1, 2, 2, 2, 2, 3, 3, 3, 3, 3, 3, 4, 4, 4, 4 };
+        constexpr int skipPhase[] = { 0, 1, 0, 1, 2, 3, 0, 1, 2, 3, 4, 5, 0, 1, 2, 3 };
+        
+        int tidx = std::min(tid, 15);
+        
+        for (int depth = 1; depth <= max_depth; depth++) {
+            if (tid > 0 && skipSize[tidx] > 1) {
+                if ((depth + skipPhase[tidx]) % skipSize[tidx] != 0) {
+                    continue;
+                }
+            }
+            
+            if (stop_search.load(std::memory_order_relaxed)) break;
+            
+            // For limiting time for moves - e.g. find the best move in 3 seconds
+            // if (time_limit_ms > 0) {
+            //     auto elapsed = duration_cast<milliseconds>(
+            //         high_resolution_clock::now() - start_time).count();
+            //     if (elapsed >= time_limit_ms) {
+            //         stop_search.store(true, std::memory_order_relaxed);
+            //         break;
+            //     }
+            // }
+
+            std::vector<Move> moves = root_moves;
+            Move tt_move = Move::NO_MOVE;
+            TTEntryParallel* entry = tt.probe(local_board.hash());
+            if (entry && entry->key == local_board.hash()) {
+                tt_move = entry->bestMove;
+            }
+            order_moves(moves, local_board, depth, tld, tt_move);
+
+            int alpha = -INFINITY_SCORE;
+            int beta = INFINITY_SCORE;
+            Move local_best_move = moves[0];
+            int local_best_score = -INFINITY_SCORE;
+
+            // Search all root moves sequentially within this thread
+            for (size_t i = 0; i < moves.size(); i++) {
+                if (stop_search.load(std::memory_order_relaxed)) break;
+
+                const Move& move = moves[i];
+                local_board.makeMove(move);
+                int score = -negamax(local_board, depth - 1, -beta, -alpha, 
+                                     1, 0, INFINITY_SCORE, tld);
+                local_board.unmakeMove(move);
+
+                if (score > local_best_score) {
+                    local_best_score = score;
+                    local_best_move = move;
+                }
+                alpha = std::max(alpha, score);
+                
+                if (alpha >= beta) break;
+            }
+
+            // Lock result 
+            {
+                std::lock_guard<std::mutex> lock(result_mutex);
+                if (depth > best_depth_completed || 
+                    (depth == best_depth_completed && local_best_score > best_score_overall)) {
+                    best_score_overall = local_best_score;
+                    best_move_overall = local_best_move;
+                    best_depth_completed = depth;
+                }
+            }
+            // Result is unlocked
+
+            if (tid == 0) {
+                auto elapsed = duration_cast<milliseconds>(
+                    high_resolution_clock::now() - start_time).count();
+                uint64_t total_nodes = 0;
+                for(const auto& t : tld_store) total_nodes += t.nodes_searched;
+                uint64_t nps = (elapsed > 0) ? (total_nodes * 1000 / elapsed) : 0;
+
+                std::cout << "info depth " << depth 
+                          << " score cp " << local_best_score
+                          << " nodes " << total_nodes
+                          << " nps " << nps
+                          << " time " << elapsed
+                          << " pv " << chess::uci::moveToUci(local_best_move)
+                          << std::endl;
+            }
+
+            if (abs(local_best_score) >= MATE_SCORE - 1000) {
+                stop_search.store(true, std::memory_order_relaxed);
                 break;
             }
         }
-
-        Movelist movelist;
-        movegen::legalmoves(movelist, board);
-        if (movelist.empty()) break;
-
-        std::vector<Move> root_moves;
-        for (const auto& m : movelist) root_moves.push_back(m);
-
-        Move prev_best = (depth > 1) ? best_move_overall : Move::NO_MOVE;
-        order_moves(root_moves, board, depth, &tld_store[0], prev_best);
-
-        std::atomic<int> alpha(-INFINITY_SCORE);
-        int beta = INFINITY_SCORE;
-        
-        std::vector<int> root_scores(root_moves.size(), -INFINITY_SCORE);
-
-        #pragma omp parallel for schedule(dynamic, 1)
-        for (int i = 0; i < (int)root_moves.size(); i++) {
-            int tid = omp_get_thread_num();
-            if (tid >= tld_store.size()) tid = 0; 
-            ThreadLocalData* tld = &tld_store[tid];
-
-            Board local_board = board;
-            Move move = root_moves[i];
-            
-            local_board.makeMove(move);
-            int local_alpha = alpha.load(std::memory_order_relaxed);
-            int score = -negamax(local_board, depth - 1, -beta, -local_alpha, 1, 0, INFINITY_SCORE, tld);
-            local_board.unmakeMove(move);
-
-            root_scores[i] = score;
-
-            int current_alpha = alpha.load(std::memory_order_relaxed);
-            while (score > current_alpha) {
-                if (alpha.compare_exchange_weak(current_alpha, score)) {
-                    break;
-                }
-            }
-        }
-
-        int iteration_best_score = -INFINITY_SCORE;
-        Move iteration_best_move = Move::NO_MOVE;
-
-        for (int i = 0; i < (int)root_moves.size(); i++) {
-            if (root_scores[i] > iteration_best_score) {
-                iteration_best_score = root_scores[i];
-                iteration_best_move = root_moves[i];
-            }
-        }
-
-        best_score_overall = iteration_best_score;
-        best_move_overall = iteration_best_move;
-
-        auto current_time = high_resolution_clock::now();
-        auto elapsed = duration_cast<milliseconds>(current_time - start_time).count();
-        uint64_t total_nodes = 0;
-        for(const auto& t : tld_store) total_nodes += t.nodes_searched;
-        uint64_t nps = (elapsed > 0) ? (total_nodes * 1000 / elapsed) : 0;
-
-        std::cout << "info depth " << depth 
-                  << " score cp " << best_score_overall 
-                  << " nodes " << total_nodes 
-                  << " nps " << nps
-                  << " time " << elapsed
-                  << " pv " << chess::uci::moveToUci(best_move_overall) 
-                  << std::endl;
-
-        if (best_score_overall >= MATE_SCORE - 1000 || best_score_overall <= -MATE_SCORE + 1000) break;
     }
 
     return best_move_overall;
@@ -598,7 +747,7 @@ std::string run_engine(Board& board, int depth = 20) {
 int main() {
     attacks::initAttacks();
     Board board("rnr5/p4p1k/bp1qp2p/3pP3/Pb1N1Q2/1P3NPB/5P2/R3R1K1 w - - 5 23");
-    run_engine(board, 14);
+    run_engine(board, 16);
     return 0;
 }
 #endif

@@ -35,7 +35,7 @@ void run_test(std::string board, std::string expected_result){
           test_title_string.c_str(),
           board.c_str(),
           expected_result.c_str(),
-          14)) {
+          20)) {
     std::cout << "[PASS] " << test_title_string << "\n";
     passed++;
   } else {
@@ -47,8 +47,10 @@ int main() {
   // Test cases
   std::string board;
   board = "7k/p6p/1p6/2n5/2Q5/8/8/7K w - - 0 1";
+  // board = "r4k2/4r1bQ/Pp1p1n2/q6p/3P4/P4N1P/1B3p2/1K2R2R b - - 1 32";
 
   run_test(board, "c4f7");
+  // run_test(board,"e7e1");
   // Test case 1
   /*board = "4r1k1/r4p1p/p3bRpQ/q2pP3/2pP4/Bpn1R3/6PP/1B4K1 w - - 0 1";
   run_test(board, "b1g6");
