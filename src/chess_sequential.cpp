@@ -677,6 +677,7 @@ Move find_best_move(Board& board, int max_depth, int time_limit_ms = 0) {
     return best_move;
 }
 
+#ifndef UNIT_TESTS
 int main() {
   attacks::initAttacks();
 
@@ -684,8 +685,6 @@ int main() {
       Board("2k2bnr/p1r2pp1/1pQp2q1/7p/4PPn1/2N1B3/PPP1BP1P/2KR3R w - - 1 16");
 
   Board board3 = Board("rnr5/p4p1k/bp1qp2p/3pP3/Pb1N1Q2/1P3NPB/5P2/R3R1K1 w - - 5 23");
-
-    // Board board4 = Board("rn3rk1/p7/bp2p2p/1q1pPp1Q/P2Nn3/1Pb2NPP/5PB1/3RR1K1 w - - 2 23");
 
   std::cout << "Initial Board:\n";
   std::cout << board2 << std::endl;
@@ -702,3 +701,4 @@ int main() {
   std::cout << "Time taken: " << duration.count() << " ms" << std::endl;
 
 }
+#endif
