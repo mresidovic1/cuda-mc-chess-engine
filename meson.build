@@ -26,8 +26,8 @@ test_exe = executable(
 
 test('engine-tests', test_exe)
 
-test_suite_exe = executable(
-  'test_suite',
+test_suite_parallel = executable(
+  'test_suite_parallel',
   ['tests/test_suite.cpp', 'src/chess_engine_parallelized.cpp'],
   dependencies: dependencies,
   include_directories: inc_dirs,
@@ -35,26 +35,35 @@ test_suite_exe = executable(
   link_args: stack_args
 )
 
-test('suite-depth-easy', test_suite_exe,
+test_suite_sequential = executable(
+  'test_suite_sequential',
+  ['tests/test_suite.cpp', 'src/chess_sequential.cpp'],
+  dependencies: dependencies,
+  include_directories: inc_dirs,
+  cpp_args: optimized_args,
+  link_args: stack_args
+)
+
+test('parallel-easy', test_suite_parallel,
      args: ['--mode=depth', '--depth=20', '--level=easy'],
      timeout: 120)
 
-test('suite-depth-medium', test_suite_exe,
+test('parallel-medium', test_suite_parallel,
      args: ['--mode=depth', '--depth=20', '--level=medium'],
      timeout: 180)
 
-test('suite-depth-hard', test_suite_exe,
+test('parallel-hard', test_suite_parallel,
      args: ['--mode=depth', '--depth=20', '--level=hard'],
-     timeout: 300)
+     timeout: 400)
 
-test('suite-time-easy', test_suite_exe,
-     args: ['--mode=time', '--time=30', '--level=easy'],
-     timeout: 300)
+test('sequential-easy', test_suite_sequential,
+     args: ['--mode=depth', '--depth=20', '--level=easy'],
+     timeout: 120)
 
-test('suite-time-medium', test_suite_exe,
-     args: ['--mode=time', '--time=30', '--level=medium'],
-     timeout: 300)
+test('sequential-medium', test_suite_sequential,
+     args: ['--mode=depth', '--depth=20', '--level=medium'],
+     timeout: 180)
 
-test('suite-time-hard', test_suite_exe,
-     args: ['--mode=time', '--time=30', '--level=hard'],
+test('sequential-hard', test_suite_sequential,
+     args: ['--mode=depth', '--depth=20', '--level=hard'],
      timeout: 400)

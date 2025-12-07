@@ -1,6 +1,50 @@
+# Build directories
 /build/
+build/
 
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Xcode
+*.xcodeproj/
+*.xcworkspace/
+xcuserdata/
+DerivedData/
+chess-parallelization/
+
+# Cache directories
 .cache/
 **/.cache/
- 
-/.vscode/
+__pycache__/
+*.pyc
+
+# Compiled files
+*.o
+*.obj
+*.exe
+*.out
+*.app
+
+# Profile and analysis results
+profile_results*/
+*.pdf
+*.plist
+
+# Test results
+results/
+*.json
+!include/*.h
+
+# Logs
+*.log
+meson-logs/
+
+# Dependencies (if any)
+node_modules/
+venv/
+.env
