@@ -692,19 +692,24 @@ Move find_best_move(Board& board, int max_depth, int time_limit_ms = 0) {
                 if (alpha >= beta) break;
             }
 
-            // Lock result 
+            // Lock result
             {
                 std::lock_guard<std::mutex> lock(result_mutex);
-                bool should_update = (depth > best_depth_completed) || 
-                                     (depth == best_depth_completed && local_best_score > best_score_overall);
                 
-                if (should_update && local_best_score > -INFINITY_SCORE) {
-                    best_score_overall = local_best_score;
-                    best_move_overall = local_best_move;
-                    best_depth_completed = depth;
+                // Skip update if another thread already found a winning result (mate)
+                if (best_score_overall >= MATE_SCORE - 1000) {
+                    // Do nothing - keep the mate result
+                } else {
+                    bool should_update = (depth > best_depth_completed) || 
+                                         (depth == best_depth_completed && local_best_score > best_score_overall);
+                    
+                    if (should_update && local_best_score > -INFINITY_SCORE) {
+                        best_score_overall = local_best_score;
+                        best_move_overall = local_best_move;
+                        best_depth_completed = depth;
+                    }
                 }
             }
-            // Result is unlocked
 
             if (tid == 0) {
                 auto elapsed = duration_cast<milliseconds>(
