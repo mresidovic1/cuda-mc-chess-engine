@@ -1,0 +1,36 @@
+================================================================================
+                    CHESS ENGINE PERFORMANCE REPORT
+================================================================================
+
+Generated: Sun Dec  7 17:03:18 CET 2025
+
+TOP 20 FUNCTIONS BY TIME:
+----------------------------------------
+    12045 Thread_27951250   DispatchQueue_1: com.apple.main-thread  (serial)
+    12045 Thread_27951264
+    12045 Thread_27951265
+    12045 Thread_27951266
+    12045 Thread_27951267
+    12045 Thread_27951268
+    12045 Thread_27951269
+    12045 Thread_27951270
+      8348 ???  (in <unknown binary>)  [0x726854207265]
+      3697 thread_start  (in libsystem_pthread.dylib) + 8  [0x19d072b80]
+        3697 _pthread_start  (in libsystem_pthread.dylib) + 136  [0x19d077c0c]
+          3697 __kmp_launch_worker(void*)  (in libomp.dylib) + 252  [0x1006152b0]
+            3697 __kmp_launch_thread  (in libomp.dylib) + 220  [0x1005e1e74]
+              3697 __kmp_fork_barrier(int, int)  (in libomp.dylib) + 460  [0x1005fc240]
+                3697 __kmp_hyper_barrier_release(barrier_type, kmp_info*, int, int, int, void*)  (in libomp.dylib) + 164  [0x1005f96c8]
+                  3697 kmp_flag_64<false, true>::wait(kmp_info*, int, void*)  (in libomp.dylib) + 1712  [0x1005fd414]
+                    3697 void __kmp_suspend_64<false, true>(int, kmp_flag_64<false, true>*)  (in libomp.dylib) + 368  [0x100616378]
+                      3697 _pthread_cond_wait  (in libsystem_pthread.dylib) + 984  [0x19d0780e0]
+                        3697 __psynch_cvwait  (in libsystem_kernel.dylib) + 8  [0x19d0393cc]
+        89406       negamax(chess::Board&, int, int, int, int, int, int, ThreadLocalData*)  (in chess-tests) + 2512  [0x10040fef0]  chess_engine_parallelized.cpp:404
+
+MEMORY ANALYSIS:
+----------------------------------------
+Process:         chess-tests [26299]
+Parent Process:  leaks [26298]
+Process 26299: 193 nodes malloced for 15 KB
+Process 26299: 0 leaks for 0 total leaked bytes.
+
