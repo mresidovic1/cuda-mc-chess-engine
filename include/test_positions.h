@@ -32,7 +32,7 @@ const std::vector<TestPosition> MEDIUM_POSITIONS = {
 };
 
 const std::vector<TestPosition> HARD_POSITIONS = {
-    {"4r2k/1p3rbp/2p1N1pn/p3n3/P2NB3/1P4q1/4R1P1/B1Q2RK1 b - - 4 32", "h6g4", "Mate in 8-9", HARD},
+    {"r1bq2nr/pp2k2p/3bB3/5pPP/1n1P4/4Q3/PBP1N1P1/R4RK1 w - - 1 20", "e6f5", "Mate in 8", HARD},
     {"rn4k1/5rbn/1p1p4/1p1q1p1p/3P4/P1B1P2P/Q2N1PR1/1K4R1 w - - 2 27", "a2d5", "Mate in 12", HARD},
     {"r4k2/pb6/1p2qP1p/P2p3r/5Q2/1Pn1RN1P/5PB1/6K1 w - - 1 33", "e3e6", "Mate in 8", HARD},
     {"1r1qk1nr/pp2b2p/4p3/1b1P2BP/1PB3Pn/1R4N1/P1P5/3Q1RK1 w - - 1 24", "c4b5", "Mate in 8-12", HARD},
