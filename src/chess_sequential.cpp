@@ -16,6 +16,12 @@ KillerMoves killer_moves;
 TranspositionTable tt;
 HistoryTable history;
 
+// --- TIME CONTROL ---
+bool g_stop_search = false;
+std::chrono::high_resolution_clock::time_point g_start_time;
+int g_time_limit_ms = 0;
+int g_nodes_searched = 0;  // Simple counter for time checks
+
 int evaluate(const Board &board) {
   int evaluation = 0;
 
@@ -161,6 +167,19 @@ int SEE(Move move, Board &board) {
 }
 
 int quiescence(Board &board, int alpha, int beta, int current_depth_from_root) {
+  // Time check
+  if (g_stop_search) return 0;
+  
+  g_nodes_searched++;
+  if (g_time_limit_ms > 0 && (g_nodes_searched & 4095) == 0) {
+    auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::high_resolution_clock::now() - g_start_time).count();
+    if (elapsed >= g_time_limit_ms) {
+      g_stop_search = true;
+      return 0;
+    }
+  }
+  
   // Safety precaution for exploring too deep
   if (current_depth_from_root >= MAX_QUIESCENCE_DEPTH) {
     return evaluate(board);
@@ -255,6 +274,19 @@ void order_moves(std::vector<Move> &moves, Board &board, int depth, Move tt_move
 }
 
 int negamax(Board &board, int depth, int alpha, int beta, int current_depth_from_root, int extension_count = 0, int prev_static_eval = INFINITY_SCORE) {
+  // Time check
+  if (g_stop_search) return 0;
+  
+  g_nodes_searched++;
+  if (g_time_limit_ms > 0 && (g_nodes_searched & 4095) == 0) {
+    auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::high_resolution_clock::now() - g_start_time).count();
+    if (elapsed >= g_time_limit_ms) {
+      g_stop_search = true;
+      return 0;
+    }
+  }
+  
   // Safety check for infinite recursion
   if (current_depth_from_root > MAX_SEARCH_DEPTH) {
     return evaluate(board);
@@ -548,6 +580,12 @@ Move find_best_move(Board& board, int max_depth, int time_limit_ms = 0) {
     // For limiting purposes, hard cut off
     using namespace std::chrono;
     auto start_time = high_resolution_clock::now();
+    
+    // Initialize time control
+    g_start_time = start_time;
+    g_time_limit_ms = time_limit_ms;
+    g_stop_search = false;
+    g_nodes_searched = 0;
    
     history.clear();
     
@@ -570,11 +608,18 @@ Move find_best_move(Board& board, int max_depth, int time_limit_ms = 0) {
     // Iterative deepening loop
     for (int depth = 1; depth <= max_depth; depth++) {
 
+        // Check if time limit exceeded
+        if (g_stop_search) {
+            std::cout << "Time limit reached at depth " << (depth - 1) << std::endl;
+            break;
+        }
+        
         // For limiting purposes, hard cut off
         if (time_limit_ms > 0) {
             auto current_time = high_resolution_clock::now();
             auto elapsed = duration_cast<milliseconds>(current_time - start_time).count();
             if (elapsed >= time_limit_ms) {
+                g_stop_search = true;
                 std::cout << "Time limit reached at depth " << (depth - 1) << std::endl;
                 break;
             }
@@ -621,10 +666,15 @@ Move find_best_move(Board& board, int max_depth, int time_limit_ms = 0) {
         int current_best_score = -INFINITY_SCORE;
         
         for (auto &move : all_moves) {
+            if (g_stop_search) {
+                break;
+            }
+            
             if (time_limit_ms > 0) {
                 auto current_time = high_resolution_clock::now();
                 auto elapsed = duration_cast<milliseconds>(current_time - start_time).count();
                 if (elapsed >= time_limit_ms) {
+                    g_stop_search = true;
                     break;  
                 }
             }
