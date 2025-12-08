@@ -24,7 +24,7 @@ echo "========================================"
 echo ""
 
 # CSV Header
-echo "Engine,Version,Level,Passed,Total,Percentage,Time_sec" > "$CSV_FILE"
+echo "Engine,Version,Level,Passed,Total,Percentage,Time_sec,Nodes,NPS" > "$CSV_FILE"
 
 # Initialize report
 {
@@ -65,16 +65,34 @@ run_single_test() {
     # Get time
     TIME_SEC=$(echo "$OUTPUT" | grep "Total execution time" | awk '{print $4}')
     
+    # Get nodes and NPS from output (look for "nodes" and "nps" in info lines)
+    # Sum up all nodes from info depth lines
+    NODES=$(echo "$OUTPUT" | grep -E "info depth.*nodes" | awk '{sum+=$5} END {print sum+0}')
+    
+    # Get average NPS (nodes per second) - take last NPS value or calculate from total
+    NPS=$(echo "$OUTPUT" | grep -E "info depth.*nps" | tail -1 | awk '{print $7}')
+    
+    # If NPS not found, calculate from nodes and time
+    if [ -z "$NPS" ] || [ "$NPS" = "0" ]; then
+        if [ -n "$NODES" ] && [ "$NODES" != "0" ] && [ -n "$TIME_SEC" ] && [ "$TIME_SEC" != "0" ]; then
+            NPS=$(echo "scale=0; $NODES / $TIME_SEC" | bc 2>/dev/null || echo "0")
+        else
+            NPS="0"
+        fi
+    fi
+    
     # Default values if parsing failed
     [ -z "$PASSED" ] && PASSED="0"
     [ -z "$TOTAL" ] && TOTAL="0"
     [ -z "$PCT" ] && PCT="0"
     [ -z "$TIME_SEC" ] && TIME_SEC="0"
+    [ -z "$NODES" ] && NODES="0"
+    [ -z "$NPS" ] && NPS="0"
     
-    echo "  -> $PASSED/$TOTAL ($PCT%) in ${TIME_SEC}s"
+    echo "  -> $PASSED/$TOTAL ($PCT%) in ${TIME_SEC}s (${NODES} nodes, ${NPS} nps)"
     
     # Write to CSV
-    echo "$ENGINE_NAME,$VERSION,$LEVEL,$PASSED,$TOTAL,$PCT,$TIME_SEC" >> "$CSV_FILE"
+    echo "$ENGINE_NAME,$VERSION,$LEVEL,$PASSED,$TOTAL,$PCT,$TIME_SEC,$NODES,$NPS" >> "$CSV_FILE"
     
     # Append to report
     {
@@ -110,10 +128,17 @@ run_first_hard_test() {
     TIME_MS=$(echo "$TIME_LINE" | grep -oE "Time: [0-9]+" | grep -oE "[0-9]+")
     TIME_SEC=$(echo "scale=1; ${TIME_MS:-0} / 1000" | bc 2>/dev/null || echo "0")
     
-    echo "  -> $PASSED/1 ($PCT%) in ${TIME_SEC}s"
+    # Get nodes and NPS for first test
+    NODES=$(echo "$OUTPUT" | grep -E "info depth.*nodes" | head -1 | awk '{print $5}')
+    NPS=$(echo "$OUTPUT" | grep -E "info depth.*nps" | head -1 | awk '{print $7}')
+    
+    [ -z "$NODES" ] && NODES="0"
+    [ -z "$NPS" ] && NPS="0"
+    
+    echo "  -> $PASSED/1 ($PCT%) in ${TIME_SEC}s (${NODES} nodes, ${NPS} nps)"
     
     # Write to CSV
-    echo "$ENGINE_NAME,$VERSION,hard_first,$PASSED,1,$PCT,$TIME_SEC" >> "$CSV_FILE"
+    echo "$ENGINE_NAME,$VERSION,hard_first,$PASSED,1,$PCT,$TIME_SEC,$NODES,$NPS" >> "$CSV_FILE"
     
     # Append to report
     {

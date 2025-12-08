@@ -1,0 +1,10 @@
+Engine,Version,Level,Passed,Total,Percentage,Time_sec,Nodes,NPS
+Sequential,v3,easy,5,5,100.0,0.0,0,0
+Sequential,v3,medium,4,5,80.0,1.7,0,0
+Sequential,v3,hard_first,0,1,0,60.0,0,0
+Parallel,v1,easy,5,5,100.0,0.1,0,nodes
+Parallel,v1,medium,4,5,80.0,0.8,0,nodes
+Parallel,v1,hard,4,5,80.0,250.9,0,nodes
+Parallel,v3,easy,5,5,100.0,0.0,0,nodes
+Parallel,v3,medium,5,5,100.0,1.4,0,nodes
+Parallel,v3,hard,4,5,80.0,188.2,0,nodes

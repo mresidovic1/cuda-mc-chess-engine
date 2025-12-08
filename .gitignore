@@ -40,6 +40,11 @@ results/
 *.json
 !include/*.h
 
+# Scripts and test artifacts
+scripts/
+comparison_results/
+versions/
+
 # Logs
 *.log
 meson-logs/
