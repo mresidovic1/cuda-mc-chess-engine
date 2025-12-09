@@ -16,6 +16,23 @@ mkdir -p "$OUTPUT_DIR"
 # Time limit per position (seconds)
 TIME_LIMIT=60
 
+# Function to find executable in versions directory
+find_executable() {
+    local name=$1
+    # Check main versions directory first
+    if [ -x "versions/$name" ]; then
+        echo "versions/$name"
+        return 0
+    fi
+    # Check subdirectories
+    local found=$(find versions -type f -name "$name" -perm +111 2>/dev/null | head -1)
+    if [ -n "$found" ]; then
+        echo "$found"
+        return 0
+    fi
+    return 1
+}
+
 echo ""
 echo "========================================"
 echo "  CHESS ENGINE COMPARISON"
@@ -153,12 +170,13 @@ echo "=== SEQUENTIAL TESTS ==="
 echo ""
 
 # Sequential v3: easy, medium, 1 hard
-if [ -x "./versions/sequential_v3" ]; then
-    run_single_test "./versions/sequential_v3" "Sequential" "v3" "easy"
-    run_single_test "./versions/sequential_v3" "Sequential" "v3" "medium"
-    run_first_hard_test "./versions/sequential_v3" "Sequential" "v3"
+SEQ_V3_PATH=$(find_executable "sequential_v3")
+if [ -n "$SEQ_V3_PATH" ]; then
+    run_single_test "$SEQ_V3_PATH" "Sequential" "v3" "easy"
+    run_single_test "$SEQ_V3_PATH" "Sequential" "v3" "medium"
+    run_first_hard_test "$SEQ_V3_PATH" "Sequential" "v3"
 else
-    echo "WARNING: versions/sequential_v3 not found"
+    echo "WARNING: sequential_v3 not found in versions directory"
 fi
 
 echo ""
@@ -166,23 +184,25 @@ echo "=== PARALLEL TESTS ==="
 echo ""
 
 # Parallel v1: all tests
-if [ -x "./versions/parallel_v1" ]; then
-    run_single_test "./versions/parallel_v1" "Parallel" "v1" "easy"
-    run_single_test "./versions/parallel_v1" "Parallel" "v1" "medium"
-    run_single_test "./versions/parallel_v1" "Parallel" "v1" "hard"
+PAR_V1_PATH=$(find_executable "parallel_v1")
+if [ -n "$PAR_V1_PATH" ]; then
+    run_single_test "$PAR_V1_PATH" "Parallel" "v1" "easy"
+    run_single_test "$PAR_V1_PATH" "Parallel" "v1" "medium"
+    run_single_test "$PAR_V1_PATH" "Parallel" "v1" "hard"
 else
-    echo "WARNING: versions/parallel_v1 not found"
+    echo "WARNING: parallel_v1 not found in versions directory"
 fi
 
 echo ""
 
 # Parallel v3: all tests
-if [ -x "./versions/parallel_v3" ]; then
-    run_single_test "./versions/parallel_v3" "Parallel" "v3" "easy"
-    run_single_test "./versions/parallel_v3" "Parallel" "v3" "medium"
-    run_single_test "./versions/parallel_v3" "Parallel" "v3" "hard"
+PAR_V3_PATH=$(find_executable "parallel_v3")
+if [ -n "$PAR_V3_PATH" ]; then
+    run_single_test "$PAR_V3_PATH" "Parallel" "v3" "easy"
+    run_single_test "$PAR_V3_PATH" "Parallel" "v3" "medium"
+    run_single_test "$PAR_V3_PATH" "Parallel" "v3" "hard"
 else
-    echo "WARNING: versions/parallel_v3 not found"
+    echo "WARNING: parallel_v3 not found in versions directory"
 fi
 
 echo ""
