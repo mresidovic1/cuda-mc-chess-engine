@@ -705,15 +705,17 @@ Move find_best_move(Board& board, int max_depth, int time_limit_ms = 0) {
             best_move = current_best_move;
             best_score = current_best_score;
             
-            std::cout << "Depth " << depth << ": " << chess::uci::moveToUci(best_move) 
-                      << " (score: " << best_score << ")";
+            auto current_time = high_resolution_clock::now();
+            auto elapsed = duration_cast<milliseconds>(current_time - start_time).count();
+            uint64_t nps = (elapsed > 0) ? (g_nodes_searched * 1000 / elapsed) : 0;
             
-            if (time_limit_ms > 0) {
-                auto current_time = high_resolution_clock::now();
-                auto elapsed = duration_cast<milliseconds>(current_time - start_time).count();
-                std::cout << " [time: " << elapsed << "ms]";
-            }
-            std::cout << std::endl;
+            std::cout << "info depth " << depth 
+                      << " score cp " << best_score
+                      << " nodes " << g_nodes_searched
+                      << " nps " << nps
+                      << " time " << elapsed << "ms"
+                      << " pv " << chess::uci::moveToUci(best_move)
+                      << std::endl;
             
             if (best_score >= MATE_SCORE - 1000 || best_score <= -MATE_SCORE + 1000) {
                 std::cout << "Mate found, stopping search." << std::endl;

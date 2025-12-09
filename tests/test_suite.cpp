@@ -6,8 +6,6 @@
 #include <string>
 #include <vector>
 #include <cstring>
-#include <fstream>
-#include <sstream>
 
 extern chess::Move find_best_move(chess::Board& board, int max_depth, int time_limit_ms);
 extern std::string run_engine(chess::Board& board, int depth);
@@ -115,6 +113,9 @@ private:
             best_move = find_best_move(board, 100, time_ms);
         }
         
+        result.depth_reached = 0;
+        result.nodes_searched = 0;
+        
         auto end = high_resolution_clock::now();
         result.time_ms = duration_cast<milliseconds>(end - start).count();
         
@@ -144,6 +145,8 @@ private:
         std::cout << "Expected: " << result.expected_move 
                   << " | Got: " << result.got_move
                   << " | Time: " << result.time_ms << "ms"
+                  << " | Depth: " << result.depth_reached
+                  << " | Nodes: " << result.nodes_searched
                   << " | " << (result.passed ? "[PASS]" : "[FAIL]") << std::endl;
     }
     
@@ -223,6 +226,8 @@ private:
             std::cout << "\"got\": \"" << r.got_move << "\", ";
             std::cout << "\"passed\": " << (r.passed ? "true" : "false") << ", ";
             std::cout << "\"time_ms\": " << r.time_ms << ", ";
+            std::cout << "\"depth_reached\": " << r.depth_reached << ", ";
+            std::cout << "\"nodes_searched\": " << r.nodes_searched << ", ";
             std::cout << "\"difficulty\": \"" << difficulty_name(r.difficulty) << "\"";
             std::cout << "}" << (i < results.size() - 1 ? "," : "") << "\n";
         }
