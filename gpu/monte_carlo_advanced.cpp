@@ -1,5 +1,8 @@
 #include "monte_carlo_advanced.hpp"
 
+
+#include "monte_carlo_advanced_kernel.cuh"
+
 extern "C" void launch_monte_carlo_simulate_kernel(
     const Position* root_position,
     const Move* root_move,
