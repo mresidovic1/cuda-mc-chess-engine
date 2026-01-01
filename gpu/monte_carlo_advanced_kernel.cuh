@@ -1,5 +1,5 @@
-#pragma once
 
+#pragma once
 #include <cuda_runtime.h>
 
 // ============================================================================
@@ -27,9 +27,19 @@
 #define MAX_PLAYOUT_MOVES 200
 
 // ============================================================================
+// GPU Constant Memory Declarations
+// ============================================================================
+extern __constant__ int d_piece_values[6];
+extern __constant__ int d_pawn_table[64];
+extern __constant__ int d_knight_table[64];
+extern __constant__ int d_bishop_table[64];
+extern __constant__ int d_rook_table[64];
+extern __constant__ int d_queen_table[64];
+extern __constant__ int d_king_table[64];
+
+// ============================================================================
 // GPU Data Structures
 // ============================================================================
-
 struct Move {
     int from;
     int to;
