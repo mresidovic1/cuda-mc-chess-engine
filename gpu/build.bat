@@ -1,54 +1,32 @@
 @echo off
-REM Build script for Monte Carlo Chess GPU version on Windows
+REM Advanced Monte Carlo Chess Engine - Build for Windows
 
-echo Building Monte Carlo Chess Engine (GPU Version)...
+echo Building Advanced Monte Carlo...
 
-REM Set CUDA path (adjust to your CUDA installation)
 set CUDA_PATH=C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.6
+set CUDA_ARCH=sm_75
 
-REM Check if nvcc exists
 where nvcc >nul 2>&1
 if %ERRORLEVEL% NEQ 0 (
-    echo ERROR: nvcc not found! Please install CUDA Toolkit or add it to PATH.
-    echo Expected path: "%CUDA_PATH%\bin"
+    echo ERROR: nvcc not found!
     exit /b 1
 )
 
-echo Step 1: Compiling CUDA kernel...
-nvcc -O3 -arch=sm_70 -c monte_carlo_kernel.cu -o monte_carlo_kernel.o
-if %ERRORLEVEL% NEQ 0 (
-    echo ERROR: Failed to compile CUDA kernel
-    exit /b 1
-)
+echo Compiling CUDA kernel...
+nvcc -O3 -arch=%CUDA_ARCH% -c monte_carlo_advanced_kernel.cu -o monte_carlo_advanced_kernel.o
+if %ERRORLEVEL% NEQ 0 exit /b 1
 
-echo Step 2: Compiling C++ wrapper...
-g++ -O3 -c monte_carlo_gpu.cpp -o monte_carlo_gpu.o -I.. -I"%CUDA_PATH%\include"
-if %ERRORLEVEL% NEQ 0 (
-    echo ERROR: Failed to compile C++ wrapper
-    exit /b 1
-)
+echo Compiling C++ wrapper...
+g++ -O3 -std=c++17 -c monte_carlo_advanced.cpp -o monte_carlo_advanced.o -I.. -I"%CUDA_PATH%\include"
+if %ERRORLEVEL% NEQ 0 exit /b 1
 
-echo Step 3: Compiling main program...
-g++ -O3 -c main_gpu.cpp -o main_gpu.o -I.. -I"%CUDA_PATH%\include"
-if %ERRORLEVEL% NEQ 0 (
-    echo ERROR: Failed to compile main program
-    exit /b 1
-)
+echo Compiling main...
+g++ -O3 -std=c++17 -c main_advanced.cpp -o main_advanced.o -I.. -I"%CUDA_PATH%\include"
+if %ERRORLEVEL% NEQ 0 exit /b 1
 
-echo Step 4: Linking executable...
-g++ -O3 main_gpu.o monte_carlo_gpu.o monte_carlo_kernel.o -o monte_carlo_chess_gpu.exe -L"%CUDA_PATH%\lib\x64" -lcudart -lcurand
-if %ERRORLEVEL% NEQ 0 (
-    echo ERROR: Failed to link executable
-    exit /b 1
-)
+echo Linking...
+g++ -O3 main_advanced.o monte_carlo_advanced.o monte_carlo_advanced_kernel.o -o monte_carlo_advanced.exe -L"%CUDA_PATH%\lib\x64" -lcudart -lcurand
+if %ERRORLEVEL% NEQ 0 exit /b 1
 
 echo.
-echo Build successful! Executable: monte_carlo_chess_gpu.exe
-echo.
-echo Usage:
-echo   monte_carlo_chess_gpu.exe [num_simulations] [optional_fen]
-echo.
-echo Example:
-echo   monte_carlo_chess_gpu.exe 50000
-echo   monte_carlo_chess_gpu.exe 100000 "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
-echo.
+echo Build OK! Run: monte_carlo_advanced.exe [simulations] [fen]

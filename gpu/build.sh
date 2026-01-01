@@ -1,53 +1,31 @@
 #!/bin/bash
-# Build script for Monte Carlo Chess GPU version on Linux
+# Advanced Monte Carlo Chess Engine - Build script
 
-echo "Building Monte Carlo Chess Engine (GPU Version)..."
+echo "Building Advanced Monte Carlo Chess Engine..."
 
-# Check if nvcc exists
 if ! command -v nvcc &> /dev/null; then
-    echo "ERROR: nvcc not found! Please install CUDA Toolkit."
+    echo "ERROR: nvcc not found! Install CUDA Toolkit."
     exit 1
 fi
 
-# Detect CUDA architecture (adjust as needed)
-CUDA_ARCH="sm_70"  # Change to sm_75, sm_80, sm_86, etc. based on your GPU
+CUDA_ARCH="sm_75"  # T4=sm_75, V100=sm_70, A100=sm_80, RTX3090=sm_86
 
-echo "Step 1: Compiling CUDA kernel..."
-nvcc -O3 -arch=$CUDA_ARCH -c monte_carlo_kernel.cu -o monte_carlo_kernel.o
-if [ $? -ne 0 ]; then
-    echo "ERROR: Failed to compile CUDA kernel"
-    exit 1
-fi
+echo "Compiling CUDA kernel..."
+nvcc -O3 -arch=$CUDA_ARCH -c monte_carlo_advanced_kernel.cu -o monte_carlo_advanced_kernel.o || exit 1
 
-echo "Step 2: Compiling C++ wrapper..."
-g++ -O3 -c monte_carlo_gpu.cpp -o monte_carlo_gpu.o -I.. -I/usr/local/cuda/include
-if [ $? -ne 0 ]; then
-    echo "ERROR: Failed to compile C++ wrapper"
-    exit 1
-fi
+echo "Compiling C++ wrapper..."
+g++ -O3 -std=c++17 -c monte_carlo_advanced.cpp -o monte_carlo_advanced.o -I.. -I/usr/local/cuda/include || exit 1
 
-echo "Step 3: Compiling main program..."
-g++ -O3 -c main_gpu.cpp -o main_gpu.o -I.. -I/usr/local/cuda/include
-if [ $? -ne 0 ]; then
-    echo "ERROR: Failed to compile main program"
-    exit 1
-fi
+echo "Compiling main..."
+g++ -O3 -std=c++17 -c main_advanced.cpp -o main_advanced.o -I.. -I/usr/local/cuda/include || exit 1
 
-echo "Step 4: Linking executable..."
-g++ -O3 main_gpu.o monte_carlo_gpu.o monte_carlo_kernel.o -o monte_carlo_chess_gpu \
-    -L/usr/local/cuda/lib64 -lcudart -lcurand
-if [ $? -ne 0 ]; then
-    echo "ERROR: Failed to link executable"
-    exit 1
-fi
+echo "Linking..."
+g++ -O3 main_advanced.o monte_carlo_advanced.o monte_carlo_advanced_kernel.o -o monte_carlo_advanced \
+    -L/usr/local/cuda/lib64 -lcudart -lcurand || exit 1
 
 echo ""
-echo "Build successful! Executable: monte_carlo_chess_gpu"
-echo ""
-echo "Usage:"
-echo "  ./monte_carlo_chess_gpu [num_simulations] [optional_fen]"
-echo ""
-echo "Example:"
+echo "Build OK! Run: ./monte_carlo_advanced [simulations] [fen]"
+echo "Example: ./monte_carlo_advanced 50000"
 echo "  ./monte_carlo_chess_gpu 50000"
 echo "  ./monte_carlo_chess_gpu 100000 \"rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1\""
 echo ""

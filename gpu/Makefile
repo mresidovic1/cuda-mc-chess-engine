@@ -1,22 +1,11 @@
-# Makefile for Monte Carlo Chess GPU version
+# Makefile for Advanced Monte Carlo Chess GPU
 
-# Compiler settings
 NVCC = nvcc
 CXX = g++
-
-# CUDA settings - adjust architecture for your GPU
-# sm_70 = Volta (V100)
-# sm_75 = Turing (RTX 20xx)
-# sm_80 = Ampere (A100, RTX 30xx)
-# sm_86 = Ampere (RTX 3090)
-# sm_89 = Ada Lovelace (RTX 40xx)
-CUDA_ARCH = sm_70
-
-# Compiler flags
+CUDA_ARCH = sm_75
 NVCC_FLAGS = -O3 -arch=$(CUDA_ARCH)
 CXX_FLAGS = -O3 -std=c++17 -I..
 
-# CUDA paths
 ifeq ($(OS),Windows_NT)
     CUDA_PATH ?= C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v12.6
     CUDA_INC = -I"$(CUDA_PATH)/include"
@@ -32,21 +21,35 @@ else
 endif
 
 CUDA_LIBS = -lcudart -lcurand
+TARGET = monte_carlo_advanced$(EXE_SUFFIX)
+OBJS = monte_carlo_advanced_kernel.o monte_carlo_advanced.o main_advanced.o
 
-# Target executable
-TARGET = monte_carlo_chess_gpu$(EXE_SUFFIX)
-
-# Object files
-OBJS = monte_carlo_kernel.o monte_carlo_gpu.o main_gpu.o
-
-# Default target
 all: $(TARGET)
 
-# Link executable
 $(TARGET): $(OBJS)
 	@echo "Linking $(TARGET)..."
 	$(CXX) $(CXX_FLAGS) $(OBJS) -o $(TARGET) $(CUDA_LIB) $(CUDA_LIBS)
-	@echo "Build successful!"
+	@echo "Build OK!"
+
+monte_carlo_advanced_kernel.o: monte_carlo_advanced_kernel.cu
+	@echo "Compiling CUDA kernel..."
+	$(NVCC) $(NVCC_FLAGS) -c $< -o $@
+
+monte_carlo_advanced.o: monte_carlo_advanced.cpp monte_carlo_advanced.hpp
+	@echo "Compiling C++ wrapper..."
+	$(CXX) $(CXX_FLAGS) $(CUDA_INC) -c $< -o $@
+
+main_advanced.o: main_advanced.cpp monte_carlo_advanced.hpp
+	@echo "Compiling main..."
+	$(CXX) $(CXX_FLAGS) $(CUDA_INC) -c $< -o $@
+
+clean:
+	$(RM) $(OBJS) $(TARGET)
+
+run: $(TARGET)
+	./$(TARGET)
+
+.PHONY: all clean run
 
 # Compile CUDA kernel
 monte_carlo_kernel.o: monte_carlo_kernel.cu monte_carlo_gpu.hpp
