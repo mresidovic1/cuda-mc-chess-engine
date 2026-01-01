@@ -94,7 +94,67 @@ __device__ int simple_SEE(const Position& pos, const Move& move) {
 // Move Generation (Simplified for GPU)
 // ============================================================================
 
-__device__ bool is_square_attacked(const Position& pos, int square, int attacking_color);
+
+// Simple version: checks if any enemy piece attacks the square
+__device__ bool is_square_attacked(const Position& pos, int square, int attacking_color) {
+    // Pawn attacks
+    int pawn = (attacking_color == GPU_WHITE) ? W_PAWN : B_PAWN;
+    int pawn_dir = (attacking_color == GPU_WHITE) ? -8 : 8;
+    int pawn_left = square + pawn_dir - 1;
+    int pawn_right = square + pawn_dir + 1;
+    int sq_rank = square / 8, sq_file = square % 8;
+    if (pawn_left >= 0 && pawn_left < 64 && abs((pawn_left % 8) - sq_file) == 1 && pos.board[pawn_left] == pawn) return true;
+    if (pawn_right >= 0 && pawn_right < 64 && abs((pawn_right % 8) - sq_file) == 1 && pos.board[pawn_right] == pawn) return true;
+
+    // Knight attacks
+    int knight = (attacking_color == GPU_WHITE) ? W_KNIGHT : B_KNIGHT;
+    const int knight_offsets[8] = {-17, -15, -10, -6, 6, 10, 15, 17};
+    for (int i = 0; i < 8; i++) {
+        int to = square + knight_offsets[i];
+        if (to >= 0 && to < 64 && pos.board[to] == knight) return true;
+    }
+
+    // King attacks
+    int king = (attacking_color == GPU_WHITE) ? W_KING : B_KING;
+    const int king_offsets[8] = {-9, -8, -7, -1, 1, 7, 8, 9};
+    for (int i = 0; i < 8; i++) {
+        int to = square + king_offsets[i];
+        if (to >= 0 && to < 64 && pos.board[to] == king) return true;
+    }
+
+    // Sliding pieces: bishop/queen (diagonals)
+    int bishop = (attacking_color == GPU_WHITE) ? W_BISHOP : B_BISHOP;
+    int queen = (attacking_color == GPU_WHITE) ? W_QUEEN : B_QUEEN;
+    const int bishop_dirs[4] = {-9, -7, 7, 9};
+    for (int d = 0; d < 4; d++) {
+        int to = square;
+        while (true) {
+            int next = to + bishop_dirs[d];
+            if (next < 0 || next >= 64 || abs((next % 8) - (to % 8)) > 2) break;
+            to = next;
+            int p = pos.board[to];
+            if (p == bishop || p == queen) return true;
+            if (p != EMPTY) break;
+        }
+    }
+
+    // Sliding pieces: rook/queen (straight)
+    int rook = (attacking_color == GPU_WHITE) ? W_ROOK : B_ROOK;
+    const int rook_dirs[4] = {-8, -1, 1, 8};
+    for (int d = 0; d < 4; d++) {
+        int to = square;
+        while (true) {
+            int next = to + rook_dirs[d];
+            if (next < 0 || next >= 64 || (d == 1 && (to % 8) == 0) || (d == 2 && (to % 8) == 7)) break;
+            to = next;
+            int p = pos.board[to];
+            if (p == rook || p == queen) return true;
+            if (p != EMPTY) break;
+        }
+    }
+
+    return false;
+}
 
 __device__ void generate_pawn_moves(const Position& pos, Move* moves, int& move_count) {
     int color = pos.side_to_move;
