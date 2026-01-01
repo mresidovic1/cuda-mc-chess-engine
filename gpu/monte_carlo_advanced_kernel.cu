@@ -1,3 +1,4 @@
+#define GPU_CONST_DEF
 #include "monte_carlo_advanced_kernel.cuh"
 #include <curand_kernel.h>
 #include <cstdint>
