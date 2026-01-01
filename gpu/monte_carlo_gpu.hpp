@@ -22,6 +22,14 @@ enum GameResult {
     DRAW = 3
 };
 
+// Simple move representation for best move selection
+struct BestMove {
+    std::string from_sq; // e.g., "e2"
+    std::string to_sq;   // e.g., "e4"
+    double score;        // Win rate from perspective of side to move
+    int simulations;
+};
+
 // Monte Carlo results
 struct MCTSResults {
     int white_wins;
@@ -40,6 +48,15 @@ struct MCTSResults {
     double black_win_rate() const {
         return total_simulations > 0 ? (double)black_wins / total_simulations : 0.0;
     }
+    
+    // Score from perspective of side to move (higher is better for current player)
+    double score_for_side_to_move(bool white_to_move) const {
+        if (white_to_move) {
+            return white_win_rate() + 0.5 * draw_rate();
+        } else {
+            return black_win_rate() + 0.5 * draw_rate();
+        }
+    }
 };
 
 class MonteCarloGPU {
@@ -50,8 +67,21 @@ public:
     // Run Monte Carlo simulations from a given board position
     MCTSResults run_simulations(const GPUBoard& board, int num_simulations);
     
+    // Find best move using Monte Carlo simulations
+    // Returns the best move with its score
+    BestMove find_best_move(const std::string& fen, int simulations_per_move);
+    
     // Helper to convert chess library board to GPU board
     static GPUBoard convert_to_gpu_board(const std::string& fen);
+    
+    // Helper to apply a move to FEN and get new FEN
+    static std::string apply_move_to_fen(const std::string& fen, int from_sq, int to_sq);
+    
+    // Helper to get all legal moves from a position
+    static std::vector<std::pair<int, int>> get_legal_moves(const GPUBoard& board);
+    
+    // Convert square index to algebraic notation
+    static std::string square_to_string(int sq);
     
     // Print results
     static void print_results(const MCTSResults& results);

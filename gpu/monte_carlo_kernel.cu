@@ -73,6 +73,105 @@ __device__ bool is_friendly(uint8_t piece, uint8_t my_color_mask) {
     return (GET_COLOR(piece) == my_color_mask);
 }
 
+// Find king position
+__device__ int find_king(GPUBoard* board, uint8_t color_mask) {
+    for (int sq = 0; sq < 64; sq++) {
+        uint8_t piece = board->squares[sq];
+        if (GET_PIECE_TYPE(piece) == KING && GET_COLOR(piece) == color_mask) {
+            return sq;
+        }
+    }
+    return -1; // King not found (game over)
+}
+
+// Check if a square is attacked by the opponent
+__device__ bool is_square_attacked(GPUBoard* board, int target_sq, uint8_t attacker_color) {
+    int target_rank, target_file;
+    get_rank_file(target_sq, target_rank, target_file);
+    
+    for (int sq = 0; sq < 64; sq++) {
+        uint8_t piece = board->squares[sq];
+        if (GET_PIECE_TYPE(piece) == EMPTY) continue;
+        if (GET_COLOR(piece) != attacker_color) continue;
+        
+        int rank, file;
+        get_rank_file(sq, rank, file);
+        uint8_t piece_type = GET_PIECE_TYPE(piece);
+        
+        // Check pawn attacks
+        if (piece_type == PAWN) {
+            int direction = (attacker_color == WHITE_MASK) ? 1 : -1;
+            if (rank + direction == target_rank && 
+                (file + 1 == target_file || file - 1 == target_file)) {
+                return true;
+            }
+        }
+        
+        // Check knight attacks
+        else if (piece_type == KNIGHT) {
+            int dr = rank - target_rank;
+            int df = file - target_file;
+            if ((dr*dr == 4 && df*df == 1) || (dr*dr == 1 && df*df == 4)) {
+                return true;
+            }
+        }
+        
+        // Check king attacks
+        else if (piece_type == KING) {
+            int dr = rank - target_rank;
+            int df = file - target_file;
+            if (dr >= -1 && dr <= 1 && df >= -1 && df <= 1 && (dr != 0 || df != 0)) {
+                return true;
+            }
+        }
+        
+        // Check sliding piece attacks (Bishop, Rook, Queen)
+        else if (piece_type == BISHOP || piece_type == ROOK || piece_type == QUEEN) {
+            int dr = target_rank - rank;
+            int df = target_file - file;
+            
+            bool is_diagonal = (dr != 0 && df != 0 && dr*dr == df*df);
+            bool is_straight = (dr == 0 || df == 0) && (dr != 0 || df != 0);
+            
+            bool can_attack = false;
+            if (piece_type == BISHOP && is_diagonal) can_attack = true;
+            if (piece_type == ROOK && is_straight) can_attack = true;
+            if (piece_type == QUEEN && (is_diagonal || is_straight)) can_attack = true;
+            
+            if (can_attack) {
+                // Check if path is clear
+                int step_r = (dr == 0) ? 0 : (dr > 0 ? 1 : -1);
+                int step_f = (df == 0) ? 0 : (df > 0 ? 1 : -1);
+                int curr_rank = rank + step_r;
+                int curr_file = file + step_f;
+                bool blocked = false;
+                
+                while (curr_rank != target_rank || curr_file != target_file) {
+                    int check_sq = square_index(curr_rank, curr_file);
+                    if (GET_PIECE_TYPE(board->squares[check_sq]) != EMPTY) {
+                        blocked = true;
+                        break;
+                    }
+                    curr_rank += step_r;
+                    curr_file += step_f;
+                }
+                
+                if (!blocked) return true;
+            }
+        }
+    }
+    
+    return false;
+}
+
+__device__ bool is_in_check(GPUBoard* board, uint8_t king_color) {
+    int king_sq = find_king(board, king_color);
+    if (king_sq == -1) return false; // King captured (shouldn't happen)
+    
+    uint8_t opponent_color = (king_color == WHITE_MASK) ? BLACK_MASK : WHITE_MASK;
+    return is_square_attacked(board, king_sq, opponent_color);
+}
+
 // Simplified move generation for random playouts
 __device__ int generate_pseudo_legal_moves(GPUBoard* board, SimpleMove* moves, int max_moves) {
     int move_count = 0;
@@ -176,20 +275,60 @@ __device__ int generate_pseudo_legal_moves(GPUBoard* board, SimpleMove* moves, i
     return move_count;
 }
 
-__device__ void make_move(GPUBoard* board, SimpleMove move) {
+__device__ GameResult make_move(GPUBoard* board, SimpleMove move) {
+    // Check if we're capturing the opponent's king
+    uint8_t captured = board->squares[move.to];
+    if (GET_PIECE_TYPE(captured) == KING) {
+        // King captured - the side that moved wins
+        uint8_t moving_color = board->side_to_move == 0 ? WHITE_MASK : BLACK_MASK;
+        return (moving_color == WHITE_MASK) ? WHITE_WIN : BLACK_WIN;
+    }
+    
     board->squares[move.to] = board->squares[move.from];
     board->squares[move.from] = EMPTY;
+    
+    // Reset halfmove clock on pawn move or capture
+    if (GET_PIECE_TYPE(board->squares[move.to]) == PAWN || captured != EMPTY) {
+        board->halfmove_clock = 0;
+    } else {
+        board->halfmove_clock++;
+    }
+    
     board->side_to_move = 1 - board->side_to_move;
-    board->halfmove_clock++;
     if (board->side_to_move == 0) board->fullmove_number++;
+    
+    return ONGOING;
 }
 
-// Check if game is over (simplified - just check if there are legal moves)
+// Check if game is over
 __device__ GameResult check_game_over(GPUBoard* board, int move_count) {
+    // Check if any king is missing (captured)
+    bool white_king_exists = false;
+    bool black_king_exists = false;
+    
+    for (int sq = 0; sq < 64; sq++) {
+        uint8_t piece = board->squares[sq];
+        if (GET_PIECE_TYPE(piece) == KING) {
+            if (GET_COLOR(piece) == WHITE_MASK) white_king_exists = true;
+            else black_king_exists = true;
+        }
+    }
+    
+    if (!white_king_exists) return BLACK_WIN;
+    if (!black_king_exists) return WHITE_WIN;
+    
+    // No legal moves - either checkmate or stalemate
     if (move_count == 0) {
-        // No legal moves - either checkmate or stalemate
-        // For simplicity, we'll count this as a draw in random playouts
-        return DRAW;
+        uint8_t current_color = board->side_to_move == 0 ? WHITE_MASK : BLACK_MASK;
+        bool in_check = is_in_check(board, current_color);
+        
+        if (in_check) {
+            // Checkmate - opponent wins
+            return (current_color == WHITE_MASK) ? BLACK_WIN : WHITE_WIN;
+        } else {
+            // Stalemate - draw
+            return DRAW;
+        }
     }
     
     // Check for 50-move rule
@@ -255,7 +394,13 @@ __global__ void monte_carlo_playout_kernel(
         
         // Pick random move
         int move_idx = curand(&state) % move_count;
-        make_move(&board, moves[move_idx]);
+        GameResult move_result = make_move(&board, moves[move_idx]);
+        
+        // Check if move resulted in king capture
+        if (move_result != ONGOING) {
+            results[tid] = move_result;
+            return;
+        }
     }
     
     // If we reach max moves, call it a draw
