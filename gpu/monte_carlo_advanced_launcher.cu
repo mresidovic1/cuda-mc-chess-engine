@@ -1,3 +1,4 @@
+#include "monte_carlo_advanced_kernel.cuh"
 #include "monte_carlo_advanced_kernel.cu"
 #include <cuda_runtime.h>
 
