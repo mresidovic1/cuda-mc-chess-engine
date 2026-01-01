@@ -122,7 +122,7 @@ struct Position {
 // ============================================================================
 
 __device__ int mirror_index(int index, int color) {
-    return (color == WHITE) ? index : (index ^ 56);
+    return (color == GPU_WHITE) ? index : (index ^ 56);
 }
 
 __device__ int piece_square_value(int piece, int square, int color) {
