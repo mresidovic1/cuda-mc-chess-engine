@@ -538,39 +538,90 @@ __device__ int select_move_weighted(Move* moves, int num_moves, curandState* ran
 }
 
 // ============================================================================
-// Monte Carlo Playout
+// Immediate Mate Detection
+// ============================================================================
+
+__device__ bool check_for_immediate_mate(const Position& pos) {
+    // Check if current position is checkmate
+    Move moves[MAX_MOVES];
+    int num_moves = generate_all_moves(pos, moves);
+    
+    if (num_moves == 0 && is_in_check(pos, pos.side_to_move)) {
+        return true;  // Checkmate!
+    }
+    return false;
+}
+
+// ============================================================================
+// Monte Carlo Playout with Minimax-style evaluation
 // ============================================================================
 
 __device__ int monte_carlo_playout(Position pos, curandState* rand_state) {
     Move moves[MAX_MOVES];
-    int initial_side = pos.side_to_move;  // Remember who is to move at start
+    int initial_side = pos.side_to_move;
+    const int MATE_SCORE = 10000;
     
+    // CRITICAL: First check if we're already in checkmate or any immediate mate
     for (int ply = 0; ply < MAX_PLAYOUT_MOVES; ply++) {
         int num_moves = generate_all_moves(pos, moves);
         
-        // Check if game is over
+        // Check game over
         int game_result = check_game_over(pos, num_moves);
         if (game_result != 999999) {
-            // Game ended - return from perspective of initial side
-            // game_result is from perspective of current player
-            // If current player == initial player, return as-is
-            // If current player != initial player, negate
             return (pos.side_to_move == initial_side) ? game_result : -game_result;
         }
         
-        // Score moves using heuristics
+        // Score all moves with advanced heuristics
         score_moves(pos, moves, num_moves);
         
-        // Select move using weighted random selection
-        int selected = select_move_weighted(moves, num_moves, rand_state);
-        if (selected < 0) break;
+        // Find the best move (greedy)
+        int best_idx = 0;
+        float best_score = moves[0].score;
+        for (int i = 1; i < num_moves; i++) {
+            if (moves[i].score > best_score) {
+                best_score = moves[i].score;
+                best_idx = i;
+            }
+        }
+        
+        // CRITICAL: Check if best move gives checkmate
+        Position test_pos = pos;
+        make_move(test_pos, moves[best_idx]);
+        
+        if (check_for_immediate_mate(test_pos)) {
+            // This move delivers checkmate!
+            // Return HUGE bonus from initial side's perspective
+            int mate_bonus = MATE_SCORE - ply;
+            return (pos.side_to_move == initial_side) ? mate_bonus : -mate_bonus;
+        }
+        
+        // For first 2 plies, play the absolute best move (greedy)
+        // After that, introduce some randomness
+        int selected;
+        if (ply < 2) {
+            selected = best_idx;  // Pure greedy for first moves
+        } else {
+            // Select from top 3 moves randomly
+            int top_count = (num_moves < 3) ? num_moves : 3;
+            // Partial sort to find top 3
+            for (int i = 0; i < top_count - 1; i++) {
+                for (int j = i + 1; j < num_moves; j++) {
+                    if (moves[j].score > moves[i].score) {
+                        Move temp = moves[i];
+                        moves[i] = moves[j];
+                        moves[j] = temp;
+                    }
+                }
+            }
+            int r = curand(rand_state) % top_count;
+            selected = r;
+        }
         
         make_move(pos, moves[selected]);
     }
     
     // Game didn't end - evaluate position
     int eval = evaluate_position(pos);
-    // Return from perspective of initial side
     return (pos.side_to_move == initial_side) ? eval : -eval;
 }
 
@@ -586,12 +637,27 @@ __global__ void monte_carlo_simulate_kernel(
     unsigned long long seed
 ) {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    const int MATE_SCORE = 10000;
+    
+    // CRITICAL: First check if this root move gives immediate checkmate!
+    Position immediate_test = root_position;
+    make_move(immediate_test, root_move);
+    
+    if (check_for_immediate_mate(immediate_test)) {
+        // This is checkmate in 1! Return MASSIVE score
+        results[idx] = 1000000.0f;  // Guaranteed mate
+        return;
+    }
+    
+    // Check if this move gives check - huge tactical bonus
+    bool gives_check = is_in_check(immediate_test, immediate_test.side_to_move);
+    float check_bonus = gives_check ? 5000.0f : 0.0f;
     
     // Initialize random state
     curandState rand_state;
     curand_init(seed, idx, 0, &rand_state);
     
-    float total_score = 0.0f;
+    float total_score = check_bonus;  // Start with check bonus if applicable
     
     for (int sim = 0; sim < num_simulations_per_thread; sim++) {
         // Make root move
