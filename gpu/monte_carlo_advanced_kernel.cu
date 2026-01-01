@@ -73,10 +73,21 @@ __device__ int simple_SEE(const Position& pos, const Move& move) {
     int attacker_value = get_piece_value(move.piece);
     int victim_value = get_piece_value(move.capture);
     
-    // Simple approximation: gain - risk
-    // If we capture a more valuable piece, it's likely good
-    // If we capture with a more valuable piece, it's risky
-    return victim_value - (attacker_value / 8);
+    // Simpler heuristic: 
+    // Good captures: victim_value >= attacker_value
+    // Bad captures: victim_value < attacker_value (but might still be okay)
+    // Return the material gain, penalized if we're using a more valuable piece
+    
+    int see_value = victim_value;
+    
+    // If attacker is more valuable than victim, assume we'll lose the attacker
+    // (unless it's a pawn capturing anything, which is usually safe)
+    if (attacker_value > victim_value) {
+        // Penalty for using valuable piece to capture less valuable one
+        see_value -= attacker_value / 2;  // Assume some risk of losing our piece
+    }
+    
+    return see_value;
 }
 
 // ============================================================================
@@ -310,8 +321,28 @@ __device__ bool is_king_captured(const Position& pos, int color) {
     return true;
 }
 
+__device__ int find_king(const Position& pos, int color) {
+    int king = (color == GPU_WHITE) ? W_KING : B_KING;
+    for (int sq = 0; sq < 64; sq++) {
+        if (pos.board[sq] == king) return sq;
+    }
+    return -1;
+}
+
+__device__ bool is_square_attacked(const Position& pos, int square, int attacking_color);
+
+__device__ bool is_in_check(const Position& pos, int color) {
+    int king_square = find_king(pos, color);
+    if (king_square < 0) return false; // King not found (shouldn't happen)
+    
+    int attacking_color = 1 - color;
+    return is_square_attacked(pos, king_square, attacking_color);
+}
+
 __device__ int check_game_over(const Position& pos, int num_moves) {
-    // Check if current player's king was captured = current player lost
+    const int MATE_SCORE = 10000;
+    
+    // Check if current player's king was captured = current player already lost
     int current_king = (pos.side_to_move == GPU_WHITE) ? W_KING : B_KING;
     bool king_exists = false;
     for (int sq = 0; sq < 64; sq++) {
@@ -323,11 +354,18 @@ __device__ int check_game_over(const Position& pos, int num_moves) {
     
     if (!king_exists) {
         // Current player's king is captured = current player lost
-        return -100000;  // Current player loses
+        return -MATE_SCORE;  // Current player loses
     }
     
-    // No legal moves = stalemate (draw)
-    if (num_moves == 0) return 0;
+    // No legal moves
+    if (num_moves == 0) {
+        // Check if in check -> checkmate, else stalemate
+        if (is_in_check(pos, pos.side_to_move)) {
+            return -MATE_SCORE;  // Checkmate - current player loses
+        } else {
+            return 0;  // Stalemate - draw
+        }
+    }
     
     // Draw by 50-move rule
     if (pos.halfmove_clock >= 100) return 0;
@@ -344,24 +382,49 @@ __device__ void score_moves(Position& pos, Move* moves, int num_moves) {
         Move& move = moves[i];
         float score = 0.0f;
         
-        // HUGE bonus for captures
+        // 1. CAPTURES - most important for tactical play
         if (move.capture != EMPTY) {
             int see_score = simple_SEE(pos, move);
-            score += 500.0f + see_score * 2.0f;  // Increased capture bonus
+            // Good captures get huge bonus
+            if (see_score > 0) {
+                score += 1000.0f + see_score;
+            } else {
+                // Even bad captures might be okay in some positions
+                score += 200.0f + see_score;
+            }
         }
         
-        // Promotion bonus
+        // 2. PROMOTIONS - almost always good
         if (move.promotion > 0) {
-            score += 150.0f;
+            score += 900.0f;  // Queen promotion is huge
         }
         
-        // Piece-square table improvement
+        // 3. CHECKS - giving check is often strong
+        // We'll approximate this by seeing if we're moving towards opponent king
+        int opp_king_sq = find_king(pos, 1 - pos.side_to_move);
+        if (opp_king_sq >= 0) {
+            int from_distance = abs((move.from / 8) - (opp_king_sq / 8)) + abs((move.from % 8) - (opp_king_sq % 8));
+            int to_distance = abs((move.to / 8) - (opp_king_sq / 8)) + abs((move.to % 8) - (opp_king_sq % 8));
+            
+            if (to_distance < from_distance) {
+                score += 50.0f;  // Bonus for moving closer to enemy king
+            }
+        }
+        
+        // 4. Piece-square table improvement
         int from_pst = piece_square_value(move.piece, move.from, pos.side_to_move);
         int to_pst = piece_square_value(move.piece, move.to, pos.side_to_move);
-        score += (to_pst - from_pst) * 0.5f;
+        score += (to_pst - from_pst);
         
-        // Small random component for variety
-        score += 0.1f;
+        // 5. Central control bonus
+        int to_rank = move.to / 8;
+        int to_file = move.to % 8;
+        if ((to_rank >= 3 && to_rank <= 4) && (to_file >= 3 && to_file <= 4)) {
+            score += 20.0f;  // Center squares bonus
+        }
+        
+        // 6. Small random component for variety
+        score += 1.0f;
         
         move.score = score;
     }
@@ -377,8 +440,10 @@ __device__ int select_move_weighted(Move* moves, int num_moves, curandState* ran
         if (moves[i].score > max_score) max_score = moves[i].score;
     }
     
-    // Calculate softmax probabilities (simplified with temperature)
-    const float temperature = 2.0f; // Higher = more random, lower = more greedy
+    // Calculate softmax probabilities with temperature
+    // Lower temperature = more greedy (picks best moves more often)
+    // Higher temperature = more random exploration
+    const float temperature = 0.5f;  // Reduced from 2.0 - now much more greedy
     float total = 0.0f;
     float probs[MAX_MOVES];
     
