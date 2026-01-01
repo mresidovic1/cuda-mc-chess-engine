@@ -92,8 +92,9 @@ __constant__ int d_king_table[64] = {
 #define B_QUEEN 13
 #define B_KING 14
 
-#define WHITE 0
-#define BLACK 1
+
+#define GPU_WHITE 0
+#define GPU_BLACK 1
 
 #define MAX_MOVES 256
 #define MAX_PLAYOUT_MOVES 200
@@ -161,12 +162,12 @@ __device__ int evaluate_position(const Position& pos) {
         if (piece == EMPTY) continue;
         
         int piece_value = get_piece_value(piece);
-        int piece_color = (piece >= B_PAWN) ? BLACK : WHITE;
+        int piece_color = (piece >= B_PAWN) ? GPU_BLACK : GPU_WHITE;
         int pst_value = piece_square_value(piece, sq, piece_color);
         
         int total_value = piece_value + pst_value;
         
-        if (piece_color == WHITE) {
+        if (piece_color == GPU_WHITE) {
             score += total_value;
         } else {
             score -= total_value;
@@ -174,10 +175,9 @@ __device__ int evaluate_position(const Position& pos) {
     }
     
     // Tempo bonus
-    score += (pos.side_to_move == WHITE) ? 10 : -10;
-    
+    score += (pos.side_to_move == GPU_WHITE) ? 10 : -10;
     // Return from perspective of side to move
-    return (pos.side_to_move == WHITE) ? score : -score;
+    return (pos.side_to_move == GPU_WHITE) ? score : -score;
 }
 
 // Simple Static Exchange Evaluation for a capture
@@ -201,13 +201,13 @@ __device__ bool is_square_attacked(const Position& pos, int square, int attackin
 
 __device__ void generate_pawn_moves(const Position& pos, Move* moves, int& move_count) {
     int color = pos.side_to_move;
-    int direction = (color == WHITE) ? -8 : 8;
-    int start_rank = (color == WHITE) ? 6 : 1;
-    int promotion_rank = (color == WHITE) ? 0 : 7;
+    int direction = (color == GPU_WHITE) ? -8 : 8;
+    int start_rank = (color == GPU_WHITE) ? 6 : 1;
+    int promotion_rank = (color == GPU_WHITE) ? 0 : 7;
     
     for (int from = 0; from < 64; from++) {
         int piece = pos.board[from];
-        int expected_pawn = (color == WHITE) ? W_PAWN : B_PAWN;
+        int expected_pawn = (color == GPU_WHITE) ? W_PAWN : B_PAWN;
         
         if (piece != expected_pawn) continue;
         
@@ -244,7 +244,7 @@ __device__ void generate_pawn_moves(const Position& pos, Move* moves, int& move_
             if (abs(to_file - file) != 1) continue; // Not on adjacent file
             
             int target = pos.board[to];
-            if (target != EMPTY && ((target >= B_PAWN) != (color == WHITE))) {
+            if (target != EMPTY && ((target >= B_PAWN) != (color == GPU_WHITE))) {
                 if (to / 8 == promotion_rank) {
                     moves[move_count++] = {from, to, 5, target, piece, 200.0f}; // Capture + promote
                 } else {
@@ -257,7 +257,7 @@ __device__ void generate_pawn_moves(const Position& pos, Move* moves, int& move_
 
 __device__ void generate_knight_moves(const Position& pos, Move* moves, int& move_count) {
     int color = pos.side_to_move;
-    int knight = (color == WHITE) ? W_KNIGHT : B_KNIGHT;
+    int knight = (color == GPU_WHITE) ? W_KNIGHT : B_KNIGHT;
     
     const int offsets[8] = {-17, -15, -10, -6, 6, 10, 15, 17};
     
@@ -278,7 +278,7 @@ __device__ void generate_knight_moves(const Position& pos, Move* moves, int& mov
             if (abs(to_rank - from_rank) > 2 || abs(to_file - from_file) > 2) continue;
             
             int target = pos.board[to];
-            bool is_enemy = (target != EMPTY && ((target >= B_PAWN) != (color == WHITE)));
+            bool is_enemy = (target != EMPTY && ((target >= B_PAWN) != (color == GPU_WHITE)));
             bool is_empty = (target == EMPTY);
             
             if (is_empty) {
@@ -293,7 +293,7 @@ __device__ void generate_knight_moves(const Position& pos, Move* moves, int& mov
 __device__ void generate_sliding_moves(const Position& pos, Move* moves, int& move_count, 
                                        int piece_type, const int* directions, int num_dirs) {
     int color = pos.side_to_move;
-    int piece = (color == WHITE) ? piece_type : (piece_type + 8);
+    int piece = (color == GPU_WHITE) ? piece_type : (piece_type + 8);
     
     for (int from = 0; from < 64; from++) {
         if (pos.board[from] != piece) continue;
@@ -315,7 +315,7 @@ __device__ void generate_sliding_moves(const Position& pos, Move* moves, int& mo
                 if ((dir == -8 || dir == 8) && to_file != from_file) break; // Vertical
                 
                 int target = pos.board[to];
-                bool is_enemy = (target != EMPTY && ((target >= B_PAWN) != (color == WHITE)));
+                bool is_enemy = (target != EMPTY && ((target >= B_PAWN) != (color == GPU_WHITE)));
                 bool is_empty = (target == EMPTY);
                 
                 if (is_empty) {
@@ -337,7 +337,7 @@ __device__ void generate_sliding_moves(const Position& pos, Move* moves, int& mo
 
 __device__ void generate_king_moves(const Position& pos, Move* moves, int& move_count) {
     int color = pos.side_to_move;
-    int king = (color == WHITE) ? W_KING : B_KING;
+    int king = (color == GPU_WHITE) ? W_KING : B_KING;
     
     const int offsets[8] = {-9, -8, -7, -1, 1, 7, 8, 9};
     
@@ -358,7 +358,7 @@ __device__ void generate_king_moves(const Position& pos, Move* moves, int& move_
             if (abs(to_rank - from_rank) > 1 || abs(to_file - from_file) > 1) continue;
             
             int target = pos.board[to];
-            bool is_enemy = (target != EMPTY && ((target >= B_PAWN) != (color == WHITE)));
+            bool is_enemy = (target != EMPTY && ((target >= B_PAWN) != (color == GPU_WHITE)));
             bool is_empty = (target == EMPTY);
             
             if (is_empty) {
@@ -400,7 +400,7 @@ __device__ int generate_all_moves(const Position& pos, Move* moves) {
 __device__ void make_move(Position& pos, const Move& move) {
     // Move piece
     pos.board[move.to] = (move.promotion > 0) ? 
-        ((pos.side_to_move == WHITE) ? move.promotion : (move.promotion + 8)) : 
+        ((pos.side_to_move == GPU_WHITE) ? move.promotion : (move.promotion + 8)) : 
         move.piece;
     pos.board[move.from] = EMPTY;
     
@@ -417,7 +417,7 @@ __device__ void make_move(Position& pos, const Move& move) {
 // ============================================================================
 
 __device__ bool is_king_captured(const Position& pos, int color) {
-    int king = (color == WHITE) ? W_KING : B_KING;
+    int king = (color == GPU_WHITE) ? W_KING : B_KING;
     for (int sq = 0; sq < 64; sq++) {
         if (pos.board[sq] == king) return false;
     }
@@ -426,8 +426,8 @@ __device__ bool is_king_captured(const Position& pos, int color) {
 
 __device__ int check_game_over(const Position& pos, int num_moves) {
     // Check if king was captured (simplified checkmate)
-    if (is_king_captured(pos, WHITE)) return -10000; // Black wins
-    if (is_king_captured(pos, BLACK)) return 10000;  // White wins
+    if (is_king_captured(pos, GPU_WHITE)) return -10000; // Black wins
+    if (is_king_captured(pos, GPU_BLACK)) return 10000;  // White wins
     
     // Draw by 50-move rule or no legal moves
     if (pos.halfmove_clock >= 100 || num_moves == 0) return 0;
@@ -517,7 +517,7 @@ __device__ int monte_carlo_playout(Position pos, curandState* rand_state) {
         int game_result = check_game_over(pos, num_moves);
         if (game_result != 999999) {
             // Game ended
-            return (pos.side_to_move == WHITE) ? game_result : -game_result;
+            return (pos.side_to_move == GPU_WHITE) ? game_result : -game_result;
         }
         
         // Score moves using heuristics
@@ -546,7 +546,6 @@ __global__ void monte_carlo_simulate_kernel(
     unsigned long long seed
 ) {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    int total_threads = gridDim.x * blockDim.x;
     
     // Initialize random state
     curandState rand_state;

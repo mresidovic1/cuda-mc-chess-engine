@@ -1,9 +1,11 @@
 #include "monte_carlo_advanced.hpp"
 #include "monte_carlo_advanced_kernel.cu"
+
 #include <cuda_runtime.h>
 #include <iostream>
 #include <algorithm>
 #include <chrono>
+#include <iomanip>
 
 namespace monte_carlo_advanced {
 
@@ -18,21 +20,16 @@ Position board_to_gpu_position(const chess::Board& board) {
     for (int sq = 0; sq < 64; sq++) {
         auto square = chess::Square(sq);
         auto piece = board.at(square);
-        
         if (piece == chess::Piece::NONE) {
             pos.board[sq] = EMPTY;
         } else {
             int piece_type = static_cast<int>(piece.type());
             int color = (piece.color() == chess::Color::WHITE) ? 0 : 8;
-            
-            // Map piece types: PAWN=0, KNIGHT=1, BISHOP=2, ROOK=3, QUEEN=4, KING=5
-            // GPU: W_PAWN=1, W_KNIGHT=2, ..., B_PAWN=9, B_KNIGHT=10, ...
             pos.board[sq] = (piece_type + 1) + color;
         }
     }
-    
     // Side to move
-    pos.side_to_move = (board.sideToMove() == chess::Color::WHITE) ? WHITE : BLACK;
+    pos.side_to_move = (board.sideToMove() == chess::Color::WHITE) ? 0 : 1;
     
     // Castling rights (simplified)
     pos.castling_rights[0] = false;
@@ -53,8 +50,8 @@ Position board_to_gpu_position(const chess::Board& board) {
 Move chess_move_to_gpu_move(const chess::Move& move, const chess::Board& board) {
     Move gpu_move;
     
-    gpu_move.from = static_cast<int>(move.from());
-    gpu_move.to = static_cast<int>(move.to());
+    gpu_move.from = move.from().index();
+    gpu_move.to = move.to().index();
     
     // Promotion
     if (move.typeOf() == chess::Move::PROMOTION) {
