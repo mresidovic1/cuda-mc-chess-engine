@@ -1,0 +1,12 @@
+# GPU Build Directory
+# Compile CUDA files manually
+
+# Build commands for Windows (adjust paths as needed):
+# nvcc -O3 -arch=sm_70 -c monte_carlo_kernel.cu -o monte_carlo_kernel.o
+# g++ -O3 -c monte_carlo_gpu.cpp -o monte_carlo_gpu.o -I..
+# g++ -O3 main_gpu.cpp monte_carlo_gpu.o monte_carlo_kernel.o -o monte_carlo_chess_gpu.exe -L"C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v12.x/lib/x64" -lcudart -lcurand
+
+# For Linux:
+# nvcc -O3 -arch=sm_70 -c monte_carlo_kernel.cu -o monte_carlo_kernel.o
+# g++ -O3 -c monte_carlo_gpu.cpp -o monte_carlo_gpu.o -I..
+# g++ -O3 main_gpu.cpp monte_carlo_gpu.o monte_carlo_kernel.o -o monte_carlo_chess_gpu -L/usr/local/cuda/lib64 -lcudart -lcurand

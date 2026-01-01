@@ -1,0 +1,21 @@
+# Build artifacts
+*.o
+*.obj
+*.exe
+monte_carlo_chess_gpu
+monte_carlo_chess_gpu.exe
+
+# CUDA compilation artifacts
+*.ptx
+*.cubin
+*.fatbin
+
+# Backup files
+*~
+*.bak
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
