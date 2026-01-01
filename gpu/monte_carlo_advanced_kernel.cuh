@@ -68,3 +68,16 @@ __global__ void monte_carlo_simulate_kernel(
     float* results,
     unsigned long long seed
 );
+
+// ============================================================================
+// Launch Function Declaration
+// ============================================================================
+extern "C" void launch_monte_carlo_simulate_kernel(
+    const Position* root_position,
+    const Move* root_move,
+    int num_simulations_per_thread,
+    float* results,
+    unsigned long long seed,
+    int blocks,
+    int threads_per_block
+);
