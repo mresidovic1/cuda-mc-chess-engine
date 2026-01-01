@@ -442,6 +442,15 @@ __device__ void score_moves(Position& pos, Move* moves, int num_moves) {
         Move& move = moves[i];
         float score = 0.0f;
         
+        // CRITICAL: Check if this move gives check - HIGHEST PRIORITY for finding mates
+        Position test_pos = pos;
+        make_move(test_pos, move);
+        bool gives_check = is_in_check(test_pos, test_pos.side_to_move);
+        
+        if (gives_check) {
+            score += 5000.0f;  // MASSIVE bonus for checks - critical for finding mates!
+        }
+        
         // 1. CAPTURES - most important for tactical play
         if (move.capture != EMPTY) {
             int see_score = simple_SEE(pos, move);
@@ -459,15 +468,14 @@ __device__ void score_moves(Position& pos, Move* moves, int num_moves) {
             score += 900.0f;  // Queen promotion is huge
         }
         
-        // 3. CHECKS - giving check is often strong
-        // We'll approximate this by seeing if we're moving towards opponent king
+        // 3. Attacking opponent king
         int opp_king_sq = find_king(pos, 1 - pos.side_to_move);
         if (opp_king_sq >= 0) {
             int from_distance = abs((move.from / 8) - (opp_king_sq / 8)) + abs((move.from % 8) - (opp_king_sq % 8));
             int to_distance = abs((move.to / 8) - (opp_king_sq / 8)) + abs((move.to % 8) - (opp_king_sq % 8));
             
             if (to_distance < from_distance) {
-                score += 50.0f;  // Bonus for moving closer to enemy king
+                score += 100.0f;  // Bonus for moving closer to enemy king
             }
         }
         
@@ -503,7 +511,7 @@ __device__ int select_move_weighted(Move* moves, int num_moves, curandState* ran
     // Calculate softmax probabilities with temperature
     // Lower temperature = more greedy (picks best moves more often)
     // Higher temperature = more random exploration
-    const float temperature = 0.5f;  // Reduced from 2.0 - now much more greedy
+    const float temperature = 0.1f;  // Very low = almost greedy, critical for finding tactics
     float total = 0.0f;
     float probs[MAX_MOVES];
     
