@@ -311,12 +311,26 @@ __device__ bool is_king_captured(const Position& pos, int color) {
 }
 
 __device__ int check_game_over(const Position& pos, int num_moves) {
-    // Check if king was captured (simplified checkmate)
-    if (is_king_captured(pos, GPU_WHITE)) return -10000; // Black wins
-    if (is_king_captured(pos, GPU_BLACK)) return 10000;  // White wins
+    // Check if current player's king was captured = current player lost
+    int current_king = (pos.side_to_move == GPU_WHITE) ? W_KING : B_KING;
+    bool king_exists = false;
+    for (int sq = 0; sq < 64; sq++) {
+        if (pos.board[sq] == current_king) {
+            king_exists = true;
+            break;
+        }
+    }
     
-    // Draw by 50-move rule or no legal moves
-    if (pos.halfmove_clock >= 100 || num_moves == 0) return 0;
+    if (!king_exists) {
+        // Current player's king is captured = current player lost
+        return -100000;  // Current player loses
+    }
+    
+    // No legal moves = stalemate (draw)
+    if (num_moves == 0) return 0;
+    
+    // Draw by 50-move rule
+    if (pos.halfmove_clock >= 100) return 0;
     
     return 999999; // Game continues
 }
@@ -330,10 +344,10 @@ __device__ void score_moves(Position& pos, Move* moves, int num_moves) {
         Move& move = moves[i];
         float score = 0.0f;
         
-        // Capture bonus
+        // HUGE bonus for captures
         if (move.capture != EMPTY) {
             int see_score = simple_SEE(pos, move);
-            score += 100.0f + see_score;
+            score += 500.0f + see_score * 2.0f;  // Increased capture bonus
         }
         
         // Promotion bonus
@@ -396,14 +410,19 @@ __device__ int select_move_weighted(Move* moves, int num_moves, curandState* ran
 
 __device__ int monte_carlo_playout(Position pos, curandState* rand_state) {
     Move moves[MAX_MOVES];
+    int initial_side = pos.side_to_move;  // Remember who is to move at start
     
     for (int ply = 0; ply < MAX_PLAYOUT_MOVES; ply++) {
         int num_moves = generate_all_moves(pos, moves);
         
+        // Check if game is over
         int game_result = check_game_over(pos, num_moves);
         if (game_result != 999999) {
-            // Game ended
-            return (pos.side_to_move == GPU_WHITE) ? game_result : -game_result;
+            // Game ended - return from perspective of initial side
+            // game_result is from perspective of current player
+            // If current player == initial player, return as-is
+            // If current player != initial player, negate
+            return (pos.side_to_move == initial_side) ? game_result : -game_result;
         }
         
         // Score moves using heuristics
@@ -417,7 +436,9 @@ __device__ int monte_carlo_playout(Position pos, curandState* rand_state) {
     }
     
     // Game didn't end - evaluate position
-    return evaluate_position(pos);
+    int eval = evaluate_position(pos);
+    // Return from perspective of initial side
+    return (pos.side_to_move == initial_side) ? eval : -eval;
 }
 
 // ============================================================================
