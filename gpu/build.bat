@@ -14,6 +14,7 @@ if %ERRORLEVEL% NEQ 0 (
 
 echo Compiling CUDA kernel...
 nvcc -O3 -arch=%CUDA_ARCH% -c monte_carlo_advanced_kernel.cu -o monte_carlo_advanced_kernel.o
+nvcc -O3 -arch=%CUDA_ARCH% -c monte_carlo_advanced_launcher.cu -o monte_carlo_advanced_launcher.o
 if %ERRORLEVEL% NEQ 0 exit /b 1
 
 echo Compiling C++ wrapper...
@@ -25,7 +26,7 @@ g++ -O3 -std=c++17 -c main_advanced.cpp -o main_advanced.o -I.. -I"%CUDA_PATH%\i
 if %ERRORLEVEL% NEQ 0 exit /b 1
 
 echo Linking...
-g++ -O3 main_advanced.o monte_carlo_advanced.o monte_carlo_advanced_kernel.o -o monte_carlo_advanced.exe -L"%CUDA_PATH%\lib\x64" -lcudart -lcurand
+g++ -O3 main_advanced.o monte_carlo_advanced.o monte_carlo_advanced_kernel.o monte_carlo_advanced_launcher.o -o monte_carlo_advanced.exe -L"%CUDA_PATH%\lib\x64" -lcudart -lcurand
 if %ERRORLEVEL% NEQ 0 exit /b 1
 
 echo.

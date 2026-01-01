@@ -1,5 +1,11 @@
 #include "monte_carlo_advanced.hpp"
-#include "monte_carlo_advanced_kernel.cu"
+#ifdef __cplusplus
+extern "C" {
+#endif
+#include "monte_carlo_advanced_launcher.cu"
+#ifdef __cplusplus
+}
+#endif
 
 #include <cuda_runtime.h>
 #include <iostream>
@@ -124,17 +130,16 @@ std::vector<MoveEvaluation> evaluate_all_moves(
         // Generate random seed
         unsigned long long seed = std::chrono::high_resolution_clock::now().time_since_epoch().count();
         
-        // Launch kernel
-        monte_carlo_simulate_kernel<<<blocks, threads_per_move>>>(
-            root_position,
-            gpu_move,
+        // Launch kernel via extern "C" wrapper
+        launch_monte_carlo_simulate_kernel(
+            &root_position,
+            &gpu_move,
             sims_per_thread,
             d_results,
-            seed
+            seed,
+            blocks,
+            threads_per_move
         );
-        
-        // Wait for kernel to finish
-        cudaDeviceSynchronize();
         
         // Copy results back
         cudaMemcpy(h_results.data(), d_results, total_threads * sizeof(float), cudaMemcpyDeviceToHost);
