@@ -1,11 +1,14 @@
 #include "monte_carlo_advanced.hpp"
-#ifdef __cplusplus
-extern "C" {
-#endif
-#include "monte_carlo_advanced_launcher.cu"
-#ifdef __cplusplus
-}
-#endif
+
+extern "C" void launch_monte_carlo_simulate_kernel(
+    const Position* root_position,
+    const Move* root_move,
+    int num_simulations_per_thread,
+    float* results,
+    unsigned long long seed,
+    int blocks,
+    int threads_per_block
+);
 
 #include <cuda_runtime.h>
 #include <iostream>
