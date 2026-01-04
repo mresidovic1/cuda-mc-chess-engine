@@ -1,4 +1,5 @@
 # Makefile for Advanced Monte Carlo Chess GPU
+# Supports both original and v1 (improved) versions
 
 NVCC = nvcc
 CXX = g++
@@ -21,94 +22,82 @@ else
 endif
 
 CUDA_LIBS = -lcudart -lcurand
+
+# Original version
 TARGET = monte_carlo_advanced$(EXE_SUFFIX)
 OBJS = monte_carlo_advanced_kernel.o monte_carlo_advanced.o main_advanced.o
 
+# N - v1: Improved version targets
+TARGET_V1 = monte_carlo_v1$(EXE_SUFFIX)
+OBJS_V1 = monte_carlo_advanced_kernel_v1.o monte_carlo_advanced_v1.o main_advanced_v1.o
+
+# Default: build original version
 all: $(TARGET)
 
+# Build both versions
+both: $(TARGET) $(TARGET_V1)
+
+# Original version
 $(TARGET): $(OBJS)
 	@echo "Linking $(TARGET)..."
 	$(CXX) $(CXX_FLAGS) $(OBJS) -o $(TARGET) $(CUDA_LIB) $(CUDA_LIBS)
 	@echo "Build OK!"
 
-monte_carlo_advanced_kernel.o: monte_carlo_advanced_kernel.cu
-	@echo "Compiling CUDA kernel..."
-	$(NVCC) $(NVCC_FLAGS) -c $< -o $@
+monte_carlo_advanced_kernel.o: monte_carlo_advanced_kernel.cu monte_carlo_advanced_kernel.cuh
+	@echo "Compiling CUDA kernel (original)..."
+	$(NVCC) $(NVCC_FLAGS) -c monte_carlo_advanced_kernel.cu -o monte_carlo_advanced_kernel.o
 
 monte_carlo_advanced.o: monte_carlo_advanced.cpp monte_carlo_advanced.hpp
-	@echo "Compiling C++ wrapper..."
-	$(CXX) $(CXX_FLAGS) $(CUDA_INC) -c $< -o $@
+	@echo "Compiling C++ wrapper (original)..."
+	$(CXX) $(CXX_FLAGS) $(CUDA_INC) -c monte_carlo_advanced.cpp -o monte_carlo_advanced.o
 
 main_advanced.o: main_advanced.cpp monte_carlo_advanced.hpp
-	@echo "Compiling main..."
-	$(CXX) $(CXX_FLAGS) $(CUDA_INC) -c $< -o $@
+	@echo "Compiling main (original)..."
+	$(CXX) $(CXX_FLAGS) $(CUDA_INC) -c main_advanced.cpp -o main_advanced.o
 
-clean:
-	$(RM) $(OBJS) $(TARGET)
+# N - v1: Improved version
+v1: $(TARGET_V1)
 
-run: $(TARGET)
-	./$(TARGET)
+$(TARGET_V1): $(OBJS_V1)
+	@echo "Linking $(TARGET_V1)..."
+	$(CXX) $(CXX_FLAGS) $(OBJS_V1) -o $(TARGET_V1) $(CUDA_LIB) $(CUDA_LIBS)
+	@echo "Build v1 OK!"
 
-.PHONY: all clean run
+monte_carlo_advanced_kernel_v1.o: monte_carlo_advanced_kernel_v1.cu monte_carlo_advanced_kernel_v1.cuh
+	@echo "Compiling CUDA kernel (v1)..."
+	$(NVCC) $(NVCC_FLAGS) -c monte_carlo_advanced_kernel_v1.cu -o monte_carlo_advanced_kernel_v1.o
 
-# Compile CUDA kernel
-monte_carlo_kernel.o: monte_carlo_kernel.cu monte_carlo_gpu.hpp
-	@echo "Compiling CUDA kernel..."
-	$(NVCC) $(NVCC_FLAGS) -c monte_carlo_kernel.cu -o monte_carlo_kernel.o
+monte_carlo_advanced_v1.o: monte_carlo_advanced_v1.cpp monte_carlo_advanced_v1.hpp
+	@echo "Compiling C++ wrapper (v1)..."
+	$(CXX) $(CXX_FLAGS) $(CUDA_INC) -c monte_carlo_advanced_v1.cpp -o monte_carlo_advanced_v1.o
 
-# Compile C++ wrapper
-monte_carlo_gpu.o: monte_carlo_gpu.cpp monte_carlo_gpu.hpp
-	@echo "Compiling C++ wrapper..."
-	$(CXX) $(CXX_FLAGS) $(CUDA_INC) -c monte_carlo_gpu.cpp -o monte_carlo_gpu.o
-
-# Compile main program
-main_gpu.o: main_gpu.cpp monte_carlo_gpu.hpp
-	@echo "Compiling main program..."
-	$(CXX) $(CXX_FLAGS) $(CUDA_INC) -c main_gpu.cpp -o main_gpu.o
+main_advanced_v1.o: main_advanced_v1.cpp monte_carlo_advanced_v1.hpp
+	@echo "Compiling main (v1)..."
+	$(CXX) $(CXX_FLAGS) $(CUDA_INC) -c main_advanced_v1.cpp -o main_advanced_v1.o
 
 # Clean build artifacts
 clean:
 	@echo "Cleaning build artifacts..."
 ifeq ($(OS),Windows_NT)
-	-$(RM) *.o $(TARGET) 2>nul
+	-$(RM) *.o $(TARGET) $(TARGET_V1) 2>nul
 else
-	$(RM) *.o $(TARGET)
+	$(RM) *.o $(TARGET) $(TARGET_V1)
 endif
 	@echo "Clean complete!"
 
-# Run with default parameters
+# Run versions
 run: $(TARGET)
-	@echo "Running Monte Carlo Chess GPU..."
 	./$(TARGET) 10000
 
-# Run with custom simulation count
-run-benchmark: $(TARGET)
-	@echo "Running benchmark with 100,000 simulations..."
-	./$(TARGET) 100000
+run-v1: $(TARGET_V1)
+	./$(TARGET_V1) --sims 10000
 
-# Rebuild from scratch
+benchmark: $(TARGET_V1)
+	./$(TARGET_V1) --benchmark --sims 25000
+
 rebuild: clean all
 
-# Help target
 help:
-	@echo "Monte Carlo Chess GPU - Makefile"
-	@echo ""
-	@echo "Available targets:"
-	@echo "  all (default) - Build the executable"
-	@echo "  clean         - Remove build artifacts"
-	@echo "  run           - Build and run with 10,000 simulations"
-	@echo "  run-benchmark - Build and run with 100,000 simulations"
-	@echo "  rebuild       - Clean and rebuild from scratch"
-	@echo "  help          - Show this help message"
-	@echo ""
-	@echo "Variables:"
-	@echo "  CUDA_ARCH     - CUDA compute capability (default: sm_70)"
-	@echo "  CUDA_PATH     - Path to CUDA toolkit"
-	@echo ""
-	@echo "Examples:"
-	@echo "  make                          # Build with default settings"
-	@echo "  make CUDA_ARCH=sm_80          # Build for RTX 30xx series"
-	@echo "  make run                      # Build and run"
-	@echo "  make clean                    # Clean build files"
+	@echo "Targets: all, v1, both, run, run-v1, benchmark, clean, help"
 
-.PHONY: all clean run run-benchmark rebuild help
+.PHONY: all both v1 clean run run-v1 benchmark rebuild help

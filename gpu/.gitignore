@@ -1,9 +1,15 @@
-# Build artifacts
+# Build directory
+build/
+
+# Build artifacts (if not in build/)
 *.o
 *.obj
-*.exe
+
+# Standalone executables (if not in build/)
 monte_carlo_chess_gpu
 monte_carlo_chess_gpu.exe
+monte_carlo_advanced_v1
+monte_carlo_advanced_v1.exe
 
 # CUDA compilation artifacts
 *.ptx
