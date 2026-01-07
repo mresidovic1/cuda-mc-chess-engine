@@ -1083,13 +1083,20 @@ bool gives_check_simple(BoardState* pos, Move m) {
     return in_check(&temp);
 }
 
-// ULTIMATE tactical move ordering with SEE
-__device__ __forceinline__
-int tactical_move_score(const BoardState* pos, Move m, bool gives_check) {
-    int move_type = (m >> 12) & 0xF;
+// ============================================================================
+// ADVANCED TACTICAL SOLVER - Iterative Deepening + Extensions + LMR + Null-Move
+// ============================================================================
 
-    // Checks - highest priority
+// Enhanced move scoring with recapture detection
+__device__ __forceinline__
+int advanced_move_score(const BoardState* pos, Move m, bool gives_check, bool is_recapture, int ply) {
+    int move_type = (m >> 12) & 0xF;
+    
+    // Checks - highest priority (potential extension)
     if (gives_check) return 1000000;
+    
+    // Recaptures - very high priority (extension candidate)
+    if (is_recapture) return 900000;
 
     // Promotion captures - use SEE
     if (move_type >= MOVE_PROMO_CAP_N && move_type <= MOVE_PROMO_CAP_Q) {
@@ -1102,17 +1109,165 @@ int tactical_move_score(const BoardState* pos, Move m, bool gives_check) {
         return 50000 + ((move_type - MOVE_PROMO_N) * 1000);
     }
 
-    // Captures - SEE + MVV-LVA for fine-grained ordering
+    // Captures - SEE + MVV-LVA
     if (move_type == MOVE_CAPTURE || move_type == MOVE_EP_CAPTURE) {
         int see = see_capture(pos, m);
-        // SEE dominates, MVV-LVA breaks ties
         return 10000 + see * 10 + mvv_lva_score(pos, m);
     }
 
-    return 0;  // Quiet moves
+    return 0;  // Quiet moves (LMR candidates)
 }
 
-// OPTIMIZED depth-2 tactical solver with futility pruning
+// Null-move pruning helper - safe conditions check
+__device__ __forceinline__
+bool can_do_nullmove(const BoardState* pos) {
+    if (in_check(pos)) return false;
+    
+    // Need non-pawn material
+    int side = pos->side_to_move;
+    Bitboard non_pawn = pos->pieces[side][KNIGHT] | pos->pieces[side][BISHOP] | 
+                        pos->pieces[side][ROOK] | pos->pieces[side][QUEEN];
+    
+    return non_pawn != 0;
+}
+
+// Selective extension detector
+__device__ __forceinline__
+int get_extension(const BoardState* pos_before, const BoardState* pos_after, 
+                  Move m, bool gives_check, bool is_recapture) {
+    // Check extension: +2 ply
+    if (gives_check) {
+        // Only extend if opponent has few moves (check is dangerous)
+        Move test_moves[MAX_MOVES];
+        int num_escape = generate_legal_moves((BoardState*)pos_after, test_moves);
+        if (num_escape <= 3) return 2; // Very forcing check
+        return 1; // Normal check
+    }
+    
+    // Recapture extension: +1 ply
+    if (is_recapture) return 1;
+    
+    // King exposure extension - detect if opponent king mobility dropped
+    int km_before = popcount(g_KING_ATTACKS[lsb(pos_before->pieces[pos_before->side_to_move ^ 1][KING])]);
+    int km_after = popcount(g_KING_ATTACKS[lsb(pos_after->pieces[pos_after->side_to_move][KING])]);
+    if (km_before - km_after >= 3) return 1; // King trapped
+    
+    return 0; // No extension
+}
+
+// ULTIMATE tactical_depth2 with extensions, LMR, null-move
+__device__ __noinline__
+int tactical_depth2_advanced(BoardState* pos, int alpha, int beta, int ply, int depth_remaining, 
+                            Square last_capture_sq, Move* pv_move) {
+    if (depth_remaining <= 0) {
+        return gpu_evaluate(pos);
+    }
+    
+    Move moves[MAX_MOVES];
+    int num_moves = generate_legal_moves(pos, moves);
+
+    if (num_moves == 0) {
+        return in_check(pos) ? -(MATE_SCORE - ply) : 0;
+    }
+
+    // Static eval for pruning decisions
+    int static_eval = gpu_evaluate(pos);
+    bool in_check_now = in_check(pos);
+    
+    // Null-move pruning (R=2, conservative)
+    if (depth_remaining >= 3 && !in_check_now && can_do_nullmove(pos)) {
+        BoardState null_pos = *pos;
+        null_pos.side_to_move ^= 1; // Pass turn
+        
+        int null_score = -tactical_depth2_advanced(&null_pos, -beta, -beta + 1, ply + 1, 
+                                                    depth_remaining - 3, -1, nullptr);
+        if (null_score >= beta) {
+            return beta; // Null-move cutoff
+        }
+    }
+    
+    // Futility pruning
+    bool futility_prune = !in_check_now && depth_remaining <= 2 && static_eval + 900 < alpha;
+
+    // Score moves with recapture detection
+    int scores[MAX_MOVES];
+    bool is_recapture[MAX_MOVES];
+    for (int i = 0; i < num_moves; i++) {
+        int to = (moves[i] >> 6) & 0x3F;
+        is_recapture[i] = (to == last_capture_sq);
+        bool gives_check = gives_check_simple(pos, moves[i]);
+        scores[i] = advanced_move_score(pos, moves[i], gives_check, is_recapture[i], ply);
+    }
+
+    // Sort top moves
+    int sort_limit = (num_moves < 30) ? num_moves : 30;
+    for (int i = 0; i < sort_limit; i++) {
+        int best_idx = i;
+        for (int j = i + 1; j < num_moves; j++) {
+            if (scores[j] > scores[best_idx]) best_idx = j;
+        }
+        if (best_idx != i) {
+            Move tm = moves[i]; moves[i] = moves[best_idx]; moves[best_idx] = tm;
+            int ts = scores[i]; scores[i] = scores[best_idx]; scores[best_idx] = ts;
+            bool tr = is_recapture[i]; is_recapture[i] = is_recapture[best_idx]; is_recapture[best_idx] = tr;
+        }
+    }
+
+    int best = -(MATE_SCORE + 1);
+    Move best_move = 0;
+    
+    for (int i = 0; i < num_moves; i++) {
+        // Futility pruning - skip quiet moves
+        if (futility_prune && scores[i] < 10000) continue;
+        
+        // Late Move Reduction (LMR) - reduce depth for late quiet moves
+        int reduction = 0;
+        if (i >= 6 && scores[i] < 10000 && depth_remaining >= 3 && !in_check_now) {
+            reduction = 1; // Reduce by 1 ply for late quiet moves
+        }
+        
+        BoardState pos2 = *pos;
+        make_move(&pos2, moves[i]);
+        
+        // Detect extensions
+        bool gives_check = (scores[i] >= 100000);
+        int extension = get_extension(pos, &pos2, moves[i], gives_check, is_recapture[i]);
+        
+        // Capture square for recapture detection
+        int move_type = (moves[i] >> 12) & 0xF;
+        Square cap_sq = (move_type == MOVE_CAPTURE || move_type == MOVE_EP_CAPTURE || 
+                        move_type >= MOVE_PROMO_CAP_N) ? ((moves[i] >> 6) & 0x3F) : -1;
+        
+        int new_depth = depth_remaining - 1 + extension - reduction;
+        if (new_depth < 0) new_depth = 0;
+        
+        int score = -tactical_depth2_advanced(&pos2, -beta, -alpha, ply + 1, new_depth, cap_sq, nullptr);
+        
+        // Re-search if LMR failed high
+        if (reduction > 0 && score > alpha) {
+            new_depth = depth_remaining - 1 + extension; // Full depth
+            score = -tactical_depth2_advanced(&pos2, -beta, -alpha, ply + 1, new_depth, cap_sq, nullptr);
+        }
+
+        if (score > best) {
+            best = score;
+            best_move = moves[i];
+        }
+        if (score > alpha) alpha = score;
+        if (alpha >= beta) break; // Beta cutoff
+    }
+
+    if (pv_move) *pv_move = best_move;
+    return best;
+}
+
+// Compatibility wrapper for old code
+__device__ __forceinline__
+int tactical_move_score(const BoardState* pos, Move m, bool gives_check) {
+    return advanced_move_score(pos, m, gives_check, false, 0);
+}
+
+// Legacy tactical_depth2 (kept for compatibility)
 __device__ __noinline__
 int tactical_depth2(BoardState* pos, int alpha, int beta, int ply) {
     Move moves[MAX_MOVES];
@@ -1217,11 +1372,64 @@ int tactical_depth2(BoardState* pos, int alpha, int beta, int ply) {
 }
 
 // ============================================================================
-// TACTICAL DEPTH 4 - Iterative mate-in-4 solver (NO RECURSION)
+// ITERATIVE DEEPENING WRAPPER - Reuses move ordering across depths
 // ============================================================================
 
 __device__ __noinline__
+int tactical_id_search(BoardState* pos, int max_depth, int alpha, int beta) {
+    Move best_move_global = 0;
+    int best_score = -(MATE_SCORE + 1);
+    
+    // Iterative deepening: depth 1, 2, 3, ... max_depth
+    for (int depth = 1; depth <= max_depth; depth++) {
+        Move pv_move = 0;
+        int score = tactical_depth2_advanced(pos, alpha, beta, 0, depth, -1, &pv_move);
+        
+        best_score = score;
+        if (pv_move != 0) best_move_global = pv_move;
+        
+        // Mate found - no need to search deeper
+        if (score >= MATE_SCORE - 20 || score <= -(MATE_SCORE - 20)) {
+            break;
+        }
+        
+        // Failed low/high - adjust window (aspiration window style)
+        if (score <= alpha) {
+            alpha = -(MATE_SCORE + 1); // Widen window
+        } else if (score >= beta) {
+            beta = MATE_SCORE + 1;
+        }
+    }
+    
+    return best_score;
+}
+
+// Simplified depth4 wrapper using advanced solver
+__device__ __noinline__
 int tactical_depth4(BoardState* pos, int alpha, int beta, int ply) {
+    // Use advanced solver with depth 4
+    Move pv;
+    return tactical_depth2_advanced(pos, alpha, beta, ply, 4, -1, &pv);
+}
+
+// Simplified depth6 wrapper using advanced solver
+__device__ __noinline__
+int tactical_depth6(BoardState* pos, int alpha, int beta, int ply) {
+    // Use advanced solver with depth 6
+    Move pv;
+    return tactical_depth2_advanced(pos, alpha, beta, ply, 6, -1, &pv);
+}
+
+// OLD depth4 implementation - REMOVED for clarity, using advanced solver above
+
+// ============================================================================
+// LEGACY: TACTICAL DEPTH 4 - Old iterative implementation (DEPRECATED)
+// Use tactical_depth2_advanced with depth=4 instead
+// ============================================================================
+
+/*
+__device__ __noinline__
+int tactical_depth4_old(BoardState* pos, int alpha, int beta, int ply) {
     Move moves[MAX_MOVES];
     int num_moves = generate_legal_moves(pos, moves);
     if (num_moves == 0) return in_check(pos) ? -(MATE_SCORE - ply) : 0;
