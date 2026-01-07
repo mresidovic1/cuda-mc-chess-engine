@@ -1180,7 +1180,7 @@ int tactical_depth2_advanced(BoardState* pos, int alpha, int beta, int ply, int 
         null_pos.side_to_move ^= 1; // Pass turn
         
         int null_score = -tactical_depth2_advanced(&null_pos, -beta, -beta + 1, ply + 1, 
-                                                    depth_remaining - 3, -1, nullptr);
+                                depth_remaining - 3, 0, nullptr);
         if (null_score >= beta) {
             return beta; // Null-move cutoff
         }
@@ -1383,7 +1383,7 @@ int tactical_id_search(BoardState* pos, int max_depth, int alpha, int beta) {
     // Iterative deepening: depth 1, 2, 3, ... max_depth
     for (int depth = 1; depth <= max_depth; depth++) {
         Move pv_move = 0;
-        int score = tactical_depth2_advanced(pos, alpha, beta, 0, depth, -1, &pv_move);
+        int score = tactical_depth2_advanced(pos, alpha, beta, 0, depth, 0, &pv_move);
         
         best_score = score;
         if (pv_move != 0) best_move_global = pv_move;
@@ -1409,7 +1409,7 @@ __device__ __noinline__
 int tactical_depth4(BoardState* pos, int alpha, int beta, int ply) {
     // Use advanced solver with depth 4
     Move pv;
-    return tactical_depth2_advanced(pos, alpha, beta, ply, 4, -1, &pv);
+    return tactical_depth2_advanced(pos, alpha, beta, ply, 4, 0, &pv);
 }
 
 // Simplified depth6 wrapper using advanced solver
@@ -1417,7 +1417,7 @@ __device__ __noinline__
 int tactical_depth6(BoardState* pos, int alpha, int beta, int ply) {
     // Use advanced solver with depth 6
     Move pv;
-    return tactical_depth2_advanced(pos, alpha, beta, ply, 6, -1, &pv);
+    return tactical_depth2_advanced(pos, alpha, beta, ply, 6, 0, &pv);
 }
 
 // OLD depth4 implementation - REMOVED for clarity, using advanced solver above
@@ -1566,51 +1566,7 @@ int tactical_depth4_old(BoardState* pos, int alpha, int beta, int ply) {
 // Very aggressive pruning for acceptable speed
 // ============================================================================
 
-__device__ __noinline__
-int tactical_depth6(BoardState* pos, int alpha, int beta, int ply) {
-    Move moves[MAX_MOVES];
-    int num_moves = generate_legal_moves(pos, moves);
-    if (num_moves == 0) return in_check(pos) ? -(MATE_SCORE - ply) : 0;
 
-    // Very aggressive pruning
-    int static_eval = gpu_evaluate(pos);
-    bool futility_prune = !in_check(pos) && static_eval + 1500 < alpha;
-
-    // Top 15 moves only
-    int scores[MAX_MOVES];
-    for (int i = 0; i < num_moves; i++) {
-        scores[i] = tactical_move_score(pos, moves[i], gives_check_simple(pos, moves[i]));
-    }
-    int sort_limit = (num_moves < 15) ? num_moves : 15;
-    for (int i = 0; i < sort_limit; i++) {
-        int best_idx = i;
-        for (int j = i + 1; j < num_moves; j++) {
-            if (scores[j] > scores[best_idx]) best_idx = j;
-        }
-        if (best_idx != i) {
-            Move tm = moves[i]; moves[i] = moves[best_idx]; moves[best_idx] = tm;
-            int ts = scores[i]; scores[i] = scores[best_idx]; scores[best_idx] = ts;
-        }
-    }
-
-    int best = -(MATE_SCORE + 1);
-    
-    for (int i = 0; i < num_moves && i < 15; i++) {
-        if (futility_prune && scores[i] < 10000) continue;
-        
-        BoardState pos2 = *pos;
-        make_move(&pos2, moves[i]);
-        
-        // Use tactical_depth4 for remaining plies (depth 6 = 1 + depth 4 of 5)
-        int score = -tactical_depth4(&pos2, -beta, -alpha, ply + 1);
-        
-        if (score > best) best = score;
-        if (score > alpha) alpha = score;
-        if (alpha >= beta) break;
-    }
-    
-    return best;
-}
 
 // Simple mate-in-1 detection (called after making our move)
 // Returns score from the side-to-move's perspective in pos
