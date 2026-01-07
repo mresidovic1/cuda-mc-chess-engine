@@ -1,89 +1,71 @@
 # Chess Engine - CPU & GPU Parallelization
 
-Ovaj projekat sadrži implementacije šahovskog engine-a optimizovane za paralelizaciju na CPU i GPU.
+This project contains chess engine implementations optimized for parallelization on both CPU and GPU.
 
-## Struktura projekta
+## Project Structure
 
-- **CPU verzija** (`src/`, `include/`): Minimax/Negamax algoritam sa OpenMP paralelizacijom
-- **GPU verzija** (`gpu/`): Monte Carlo Tree Search (MCTS) implementacija sa CUDA
+- **CPU version** (`cpu/`): Minimax/Negamax algorithm with OpenMP parallelization
+- **GPU version** (`gpu/`): Monte Carlo Tree Search (MCTS) implementation with CUDA
 
-## CPU Verzija (Minimax/Negamax)
+## CPU Version - Quick Start
 
-Kompletan chess library nalazi se u `/include/chess.hpp`.
+### Prerequisites
+- Meson build system
+- C++ compiler with OpenMP support
 
-Za korištenje u projektu:
-
-```cpp
-#include '../include/chess.hpp'
-```
-
-Ovaj library koristi [Meson build sistem](https://mesonbuild.com/Quick-guide.html) za kompajliranje.
-
-### Koraci za instalaciju CPU verzije:
-
+### Building
 ```bash
-   meson setup build
+cd cpu
+meson setup build
+meson compile -C build
 ```
 
+### Running
 ```bash
-   meson compile -C build
+# Run tests
+build/chess-tests
+
+# Run engine with depth 10
+build/test_suite_parallel --mode=depth --depth=10 --level=easy
 ```
 
-```bash
-   # Pokretanje testova
-   build/chess-tests
-   build/test_suite_parallel --mode=depth --depth=10 --level=easy
-```
+## GPU Version - Quick Start
 
-## GPU Verzija (Monte Carlo)
+### Prerequisites
+- NVIDIA GPU (Compute Capability 7.5+)
+- CUDA Toolkit 12.6 or 13.1+
+- Windows with MSVC compiler
 
-GPU verzija koristi CUDA za masivnu paralelizaciju Monte Carlo simulacija.
-
-### Preduslovi za GPU verziju:
-
-- NVIDIA GPU sa CUDA podrškom (Compute Capability 7.0+)
-- CUDA Toolkit 12.x ili noviji
-- g++ kompajler
-
-### Kompilacija GPU verzije:
-
-**Windows:**
-
+### Building
 ```bash
 cd gpu
-build.bat
+scripts\build.bat        # Build MCTS engine
+scripts\build_tests.bat  # Build test suite
 ```
 
-**Linux:**
-
+### Running
 ```bash
-cd gpu
-chmod +x build.sh
-./build.sh
+# Run MCTS engine
+build\main.exe
+
+# Run test suite
+build\test_runner.exe --all
+build\test_runner.exe --easy      # Tactical tests (mate-in-1)
+build\test_runner.exe --perft     # Move generation tests
 ```
 
-### Pokretanje GPU verzije:
+See [gpu/README.md](gpu/README.md) for more details.
 
-```bash
-# Windows
-gpu\monte_carlo_chess_gpu.exe 50000
+## CPU vs GPU Comparison
 
-# Linux
-./gpu/monte_carlo_chess_gpu 50000
-```
+| Aspect | CPU (Minimax) | GPU (MCTS) |
+|--------|---------------|------------|
+| Algorithm | Deterministic search | Stochastic simulations |
+| Parallelization | OpenMP (threads) | CUDA (thousands of threads) |
+| Evaluation | Heuristics + piece-square | Win/loss statistics |
+| Speed | ~1M positions/s | ~50K simulations/s |
+| Accuracy | High at shallow depth | Increases with simulations |
 
-Za detaljnije uputstvo, pogledaj [gpu/README.md](gpu/README.md).
-
-## Poređenje CPU vs GPU pristupa
-
-| Aspekt         | CPU (Minimax)             | GPU (Monte Carlo)          |
-| -------------- | ------------------------- | -------------------------- |
-| Algoritam      | Deterministička pretraga  | Stohastičke simulacije     |
-| Paralelizacija | OpenMP (niti)             | CUDA (hiljade threadova)   |
-| Evaluacija     | Heuristike + piece-square | Win/loss statistika        |
-| Brzina         | ~1M pozicija/s            | ~50K simulacija/s          |
-| Tačnost        | Visoka na maloj dubini    | Raste sa brojem simulacija |
-
-## Licence
+## License
 
 MIT License

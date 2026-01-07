@@ -76,7 +76,7 @@ int main() {
   run_test(board, "d8d7");
 
   // Test case 7
-  board = "6k1/3r2p1/R4p2/1p2qP1Q/4P3/1P1P3P/1Pr2BP1/6K1 w - - 0 1";
+  board = "6k1/3r2p1/R4p2/1p2qP1Q/4P3/1P1P3P/1Pr2BP1/6K1 w - - 0 ts";
   run_test(board, "a6a8");
 
   // Test case 8 - cheese blunder
