@@ -1427,7 +1427,7 @@ int tactical_depth6(BoardState* pos, int alpha, int beta, int ply) {
 // Use tactical_depth2_advanced with depth=4 instead
 // ============================================================================
 
-/*
+//
 __device__ __noinline__
 int tactical_depth4_old(BoardState* pos, int alpha, int beta, int ply) {
     Move moves[MAX_MOVES];
