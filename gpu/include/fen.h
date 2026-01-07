@@ -6,6 +6,7 @@
 
 #include "chess_types.cuh"
 #include <string>
+#include <cstring>
 #include <sstream>
 #include <cctype>
 
