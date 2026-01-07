@@ -1239,7 +1239,7 @@ int tactical_depth4(BoardState* pos, int alpha, int beta, int ply) {
     bool can_null = !in_check_root && static_eval > beta && ply < 4;
     if (can_null) {
         BoardState pos_null = *pos;
-        pos_null.side ^= 1; // Switch side
+        pos_null.side_to_move ^= 1; // Switch side
         int null_score = -gpu_evaluate(&pos_null); // Rough 2-ply reduction
         if (null_score >= beta) {
             return beta; // Prune this branch
@@ -1432,7 +1432,7 @@ int tactical_depth6(BoardState* pos, int alpha, int beta, int ply) {
     bool can_null = !in_check_root && static_eval > beta + 100 && ply < 3;
     if (can_null) {
         BoardState pos_null = *pos;
-        pos_null.side ^= 1;
+        pos_null.side_to_move ^= 1;
         // Approximate 3-ply reduction by calling depth4 at reduced window
         int null_score = -tactical_depth4(&pos_null, -beta, -beta + 1, ply + 1);
         if (null_score >= beta) {
