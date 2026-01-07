@@ -854,6 +854,46 @@ int mvv_lva_score(const BoardState* pos, Move m) {
     return 0;
 }
 
+// Static Exchange Evaluation (SEE) - evaluates capture profitability
+__device__ __forceinline__
+int see_capture(const BoardState* pos, Move m) {
+    int from = m & 0x3F;
+    int to = (m >> 6) & 0x3F;
+    int move_type = (m >> 12) & 0xF;
+    
+    constexpr int piece_values[6] = {100, 320, 330, 500, 900, 0};
+    
+    // Find moving piece
+    int attacker_value = 0;
+    int moving_piece = -1;
+    for (int pt = 0; pt < 5; pt++) {
+        if (pos->pieces[pos->side_to_move][pt] & (1ULL << from)) {
+            moving_piece = pt;
+            attacker_value = piece_values[pt];
+            break;
+        }
+    }
+    
+    if (moving_piece < 0) return 0;
+    
+    // Find captured piece
+    int victim_value = 0;
+    if (move_type == MOVE_CAPTURE || move_type >= MOVE_PROMO_CAP_N) {
+        for (int pt = 0; pt < 5; pt++) {
+            if (pos->pieces[pos->side_to_move ^ 1][pt] & (1ULL << to)) {
+                victim_value = piece_values[pt];
+                break;
+            }
+        }
+    } else if (move_type == MOVE_EP_CAPTURE) {
+        victim_value = 100;
+    }
+    
+    // Simple SEE: victim - (attacker if recaptured)
+    // Positive = good capture, Negative = losing capture
+    return victim_value - attacker_value;
+}
+
 // OPTIMIZED quiescence search with delta pruning and SEE
 __device__ __forceinline__
 int quiescence_search_simple(const BoardState* pos, int max_depth) {
@@ -1032,48 +1072,8 @@ extern "C" void launch_quiescence_playout(
 #define INF_SCORE 32000
 
 // ============================================================================
-// TACTICAL OPTIMIZATIONS - SEE, Pruning, Enhanced Move Ordering
+// TACTICAL OPTIMIZATIONS - Pruning, Enhanced Move Ordering
 // ============================================================================
-
-// Static Exchange Evaluation (SEE) - evaluates capture profitability
-__device__ __forceinline__
-int see_capture(const BoardState* pos, Move m) {
-    int from = m & 0x3F;
-    int to = (m >> 6) & 0x3F;
-    int move_type = (m >> 12) & 0xF;
-    
-    constexpr int piece_values[6] = {100, 320, 330, 500, 900, 0};
-    
-    // Find moving piece
-    int attacker_value = 0;
-    int moving_piece = -1;
-    for (int pt = 0; pt < 5; pt++) {
-        if (pos->pieces[pos->side_to_move][pt] & (1ULL << from)) {
-            moving_piece = pt;
-            attacker_value = piece_values[pt];
-            break;
-        }
-    }
-    
-    if (moving_piece < 0) return 0;
-    
-    // Find captured piece
-    int victim_value = 0;
-    if (move_type == MOVE_CAPTURE || move_type >= MOVE_PROMO_CAP_N) {
-        for (int pt = 0; pt < 5; pt++) {
-            if (pos->pieces[pos->side_to_move ^ 1][pt] & (1ULL << to)) {
-                victim_value = piece_values[pt];
-                break;
-            }
-        }
-    } else if (move_type == MOVE_EP_CAPTURE) {
-        victim_value = 100;
-    }
-    
-    // Simple SEE: victim - (attacker if recaptured)
-    // Positive = good capture, Negative = losing capture
-    return victim_value - attacker_value;
-}
 
 // Check if move gives check
 __device__ __forceinline__
