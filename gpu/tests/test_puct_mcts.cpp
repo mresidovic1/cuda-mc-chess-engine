@@ -468,21 +468,29 @@ bool test_move_probabilities() {
     Move moves[MAX_MOVES];
     int num_moves = cpu_movegen::generate_legal_moves_cpu(&pos, moves);
     
+    // Calculate total sum across ALL probabilities
     float sum = 0.0f;
-    int top_n = std::min(5, (int)probs.size());
-    
-    for (int i = 0; i < top_n && i < num_moves; i++) {
-        std::cout << "  " << move_to_uci(moves[i]) << ": " 
-                  << std::fixed << std::setprecision(3) << probs[i] << "\n";
+    for (size_t i = 0; i < probs.size(); i++) {
         sum += probs[i];
     }
     
-    if (std::abs(sum - 1.0f) < 0.01f || probs.size() <= 5) {
+    // Display top 5 moves
+    int top_n = std::min(5, (int)probs.size());
+    for (int i = 0; i < top_n && i < num_moves; i++) {
+        std::cout << "  " << move_to_uci(moves[i]) << ": " 
+                  << std::fixed << std::setprecision(3) << probs[i] << "\n";
+    }
+    
+    std::cout << "Total probability sum: " << std::fixed << std::setprecision(3) << sum << "\n";
+    std::cout << "Number of moves: " << probs.size() << "\n";
+    
+    // Check if probabilities sum to ~1.0 (within tolerance)
+    if (std::abs(sum - 1.0f) < 0.05f) {
         std::cout << "✓ Probability distribution valid\n";
         return true;
     } else {
-        std::cout << "⚠ Probability sum: " << sum << "\n";
-        return true;  // Not critical
+        std::cout << "✗ Probability sum incorrect (expected ~1.0, got " << sum << ")\n";
+        return false;
     }
 }
 
