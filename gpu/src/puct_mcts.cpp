@@ -340,6 +340,18 @@ PUCTNode* PUCTEngine::select(PUCTNode* node) {
                     
                     auto child = std::make_unique<PUCTNode>(child_state, move, node, prior);
                     PUCTNode* child_ptr = child.get();
+                    
+                    // IMMEDIATE CHECKMATE DETECTION - critical for mate-in-1!
+                    Move temp_moves[MAX_MOVES];
+                    int num_child_moves = cpu_movegen::generate_legal_moves_cpu(&child_state, temp_moves);
+                    if (num_child_moves == 0 && cpu_movegen::in_check_cpu(&child_state)) {
+                        // Opponent has no legal moves and is in check = CHECKMATE!
+                        child_ptr->is_terminal = true;
+                        child_ptr->value_estimate = 1.0f;  // WIN for the player who made this move!
+                        child_ptr->evaluated = true;
+                        child_ptr->moves_generated = true;
+                    }
+                    
                     node->children.push_back(std::move(child));
                     
                     return child_ptr;
