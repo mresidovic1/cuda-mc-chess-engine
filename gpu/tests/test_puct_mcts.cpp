@@ -334,11 +334,13 @@ bool test_mate_in_1() {
     std::cout << "Expected: " << expected << "\n";
     
     PUCTConfig config;
-    config.num_simulations = 1600;  // More sims for tactical accuracy
+    config.num_simulations = 3200;   // High sim count for mate detection
     config.playout_mode = PlayoutMode::QUIESCENCE;
-    config.quiescence_depth = 8;    // Deeper quiescence for mate detection
-    config.capture_weight = 3.0f;   // Prioritize captures
-    config.check_weight = 4.0f;     // Heavily prioritize checks (mate involves check)
+    config.quiescence_depth = 10;    // Very deep quiescence for mate
+    config.capture_weight = 1.0f;    // Lower priority for captures
+    config.check_weight = 10.0f;     // MASSIVE priority for checks (checkmate detection)
+    config.c_puct = 1.5f;            // Lower exploration for focused search
+    config.add_dirichlet_noise = false;  // Disable noise for deterministic mate finding
     config.verbose = false;
     
     PUCTEngine engine(config);
