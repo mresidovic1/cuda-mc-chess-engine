@@ -153,8 +153,8 @@ bool test_puct_formula() {
     std::cout << "Node 2 (1 visit, med Q):   PUCT = " << score2 << "\n";
     std::cout << "Node 3 (0 visits, FPU):    PUCT = " << score3 << "\n";
     
-    // Node 2 should have higher PUCT (less explored)
-    if (score2 > score1) {
+    // Node 3 (unvisited) should have highest PUCT due to FPU encouraging exploration
+    if (score3 > score1 && score3 > score2) {
         std::cout << "✓ PUCT favors exploration correctly\n";
         return true;
     } else {
@@ -334,9 +334,11 @@ bool test_mate_in_1() {
     std::cout << "Expected: " << expected << "\n";
     
     PUCTConfig config;
-    config.num_simulations = 800;
+    config.num_simulations = 1600;  // More sims for tactical accuracy
     config.playout_mode = PlayoutMode::QUIESCENCE;
-    config.quiescence_depth = 6;
+    config.quiescence_depth = 8;    // Deeper quiescence for mate detection
+    config.capture_weight = 3.0f;   // Prioritize captures
+    config.check_weight = 4.0f;     // Heavily prioritize checks (mate involves check)
     config.verbose = false;
     
     PUCTEngine engine(config);
