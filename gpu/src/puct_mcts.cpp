@@ -595,6 +595,17 @@ Move PUCTEngine::select_move_by_temperature(float temperature) {
         return root ? (root->legal_moves.empty() ? 0 : root->legal_moves[0]) : 0;
     }
     
+    // PRIORITY: Check for immediate checkmate (terminal win)
+    for (auto& child : root->children) {
+        if (child->is_terminal && child->evaluated) {
+            // Terminal node with value > 0.9 = CHECKMATE for us!
+            float child_q = child->Q();
+            if (child_q < -0.9f) {  // Negative because it's opponent's loss = our win
+                return child->move_from_parent;
+            }
+        }
+    }
+    
     std::vector<int> visits;
     std::vector<Move> moves;
     
@@ -604,13 +615,21 @@ Move PUCTEngine::select_move_by_temperature(float temperature) {
     }
     
     if (temperature < 0.01f) {
-        // Greedy
+        // Greedy - but also consider Q value for ties
         int max_visits = *std::max_element(visits.begin(), visits.end());
+        float best_q = -999.0f;
+        Move best_move = moves[0];
+        
         for (size_t i = 0; i < visits.size(); i++) {
             if (visits[i] == max_visits) {
-                return moves[i];
+                float q = root->children[i]->Q();
+                if (q > best_q) {
+                    best_q = q;
+                    best_move = moves[i];
+                }
             }
         }
+        return best_move;
     }
     
     // Temperature scaling
