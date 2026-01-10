@@ -8,6 +8,7 @@
 #include <atomic>
 #include <mutex>
 #include <random>
+#include <cstring>
 
 // ============================================================================
 // HEURISTIC-BASED PUCT MCTS (AlphaZero concepts WITHOUT neural networks)

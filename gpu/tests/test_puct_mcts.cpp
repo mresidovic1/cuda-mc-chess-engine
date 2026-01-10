@@ -325,7 +325,7 @@ bool test_mate_in_1() {
     const char* expected = "d1d8";
     
     BoardState pos;
-    if (!parse_fen(fen, &pos)) {
+    if (ParseFEN(std::string(fen), pos) != FENError::NONE) {
         std::cout << "✗ FEN parsing failed\n";
         return false;
     }
