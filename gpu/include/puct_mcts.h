@@ -51,7 +51,8 @@ struct MoveHeuristics {
     static bool is_passed_pawn_push(Move move, const BoardState& state);
     
     // Combined heuristic score for move ordering
-    static float heuristic_policy_prior(Move move, const BoardState& state, int ply);
+    static float heuristic_policy_prior(Move move, const BoardState& state, int ply, 
+                                         float capture_weight = 1.0f, float check_weight = 5.0f);
 };
 
 // Killer moves table (indexed by ply)

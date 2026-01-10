@@ -137,17 +137,18 @@ bool MoveHeuristics::is_passed_pawn_push(Move move, const BoardState& state) {
     return false;
 }
 
-float MoveHeuristics::heuristic_policy_prior(Move move, const BoardState& state, int ply) {
+float MoveHeuristics::heuristic_policy_prior(Move move, const BoardState& state, int ply,
+                                              float capture_weight, float check_weight) {
     float score = 1.0f;  // Base score
     
     // Tactical bonuses
     if (is_capture(move)) {
         int mvv_lva = mvv_lva_score(move, state);
-        score += mvv_lva / 100.0f;  // Normalize
+        score += (mvv_lva / 100.0f) * capture_weight;  // Use config weight
     }
     
     if (is_check(move, state)) {
-        score += 5.0f;  // Strong bonus for checks
+        score += check_weight;  // Use config weight (CRITICAL for mate detection!)
     }
     
     if (is_promotion(move)) {
@@ -517,7 +518,8 @@ void PUCTEngine::compute_move_priors(PUCTNode* node) {
     // Compute heuristic score for each move
     for (size_t i = 0; i < node->legal_moves.size(); i++) {
         Move move = node->legal_moves[i];
-        float score = MoveHeuristics::heuristic_policy_prior(move, node->state, node->depth);
+        float score = MoveHeuristics::heuristic_policy_prior(move, node->state, node->depth,
+                                                              config.capture_weight, config.check_weight);
         
         // Add killer move bonus
         if (killer_moves.is_killer(move, node->depth)) {
