@@ -1,11 +1,11 @@
-# Makefile for Advanced Monte Carlo Chess GPU
-# Supports both original and v1 (improved) versions
+# Makefile for PUCT MCTS Chess Engine (Heuristic AlphaZero-style)
+# NO neural networks - pure heuristic search with AlphaZero concepts
 
 NVCC = nvcc
 CXX = g++
 CUDA_ARCH = sm_75
-NVCC_FLAGS = -O3 -arch=$(CUDA_ARCH)
-CXX_FLAGS = -O3 -std=c++17 -I..
+NVCC_FLAGS = -O3 -arch=$(CUDA_ARCH) -Iinclude
+CXX_FLAGS = -O3 -std=c++17 -pthread -Iinclude
 
 ifeq ($(OS),Windows_NT)
     CUDA_PATH ?= C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v12.6
@@ -23,81 +23,105 @@ endif
 
 CUDA_LIBS = -lcudart -lcurand
 
-# Original version
-TARGET = monte_carlo_advanced$(EXE_SUFFIX)
-OBJS = monte_carlo_advanced_kernel.o monte_carlo_advanced.o main_advanced.o
+# PUCT MCTS Engine (Heuristic-based)
+TARGET = puct_chess$(EXE_SUFFIX)
+OBJS = gpu_kernels.o init_tables.o mcts.o puct_mcts.o main.o
 
-# N - v1: Improved version targets
-TARGET_V1 = monte_carlo_v1$(EXE_SUFFIX)
-OBJS_V1 = monte_carlo_advanced_kernel_v1.o monte_carlo_advanced_v1.o main_advanced_v1.o
-
-# Default: build original version
+# Default: build PUCT engine
 all: $(TARGET)
 
-# Build both versions
-both: $(TARGET) $(TARGET_V1)
-
-# Original version
+# PUCT MCTS Engine
 $(TARGET): $(OBJS)
-	@echo "Linking $(TARGET)..."
+	@echo "Linking PUCT Chess Engine..."
 	$(CXX) $(CXX_FLAGS) $(OBJS) -o $(TARGET) $(CUDA_LIB) $(CUDA_LIBS)
-	@echo "Build OK!"
+	@echo "PUCT Engine built successfully!"
 
-monte_carlo_advanced_kernel.o: monte_carlo_advanced_kernel.cu monte_carlo_advanced_kernel.cuh
-	@echo "Compiling CUDA kernel (original)..."
-	$(NVCC) $(NVCC_FLAGS) -c monte_carlo_advanced_kernel.cu -o monte_carlo_advanced_kernel.o
+gpu_kernels.o: src/gpu_kernels.cu include/chess_types.cuh include/move_gen.cuh
+	@echo "Compiling GPU kernels..."
+	$(NVCC) $(NVCC_FLAGS) -c src/gpu_kernels.cu -o gpu_kernels.o
 
-monte_carlo_advanced.o: monte_carlo_advanced.cpp monte_carlo_advanced.hpp
-	@echo "Compiling C++ wrapper (original)..."
-	$(CXX) $(CXX_FLAGS) $(CUDA_INC) -c monte_carlo_advanced.cpp -o monte_carlo_advanced.o
+init_tables.o: src/init_tables.cu include/chess_types.cuh
+	@echo "Compiling attack table initialization..."
+	$(NVCC) $(NVCC_FLAGS) -c src/init_tables.cu -o init_tables.o
 
-main_advanced.o: main_advanced.cpp monte_carlo_advanced.hpp
-	@echo "Compiling main (original)..."
-	$(CXX) $(CXX_FLAGS) $(CUDA_INC) -c main_advanced.cpp -o main_advanced.o
+mcts.o: src/mcts.cpp include/mcts.h include/chess_types.cuh include/search_config.h
+	@echo "Compiling original MCTS..."
+	$(CXX) $(CXX_FLAGS) $(CUDA_INC) -c src/mcts.cpp -o mcts.o
 
-# N - v1: Improved version
-v1: $(TARGET_V1)
+puct_mcts.o: src/puct_mcts.cpp include/puct_mcts.h include/chess_types.cuh include/search_config.h
+	@echo "Compiling PUCT MCTS (heuristic AlphaZero)..."
+	$(CXX) $(CXX_FLAGS) $(CUDA_INC) -c src/puct_mcts.cpp -o puct_mcts.o
 
-$(TARGET_V1): $(OBJS_V1)
-	@echo "Linking $(TARGET_V1)..."
-	$(CXX) $(CXX_FLAGS) $(OBJS_V1) -o $(TARGET_V1) $(CUDA_LIB) $(CUDA_LIBS)
-	@echo "Build v1 OK!"
+main.o: src/main.cpp include/mcts.h include/puct_mcts.h include/chess_types.cuh
+	@echo "Compiling main..."
+	$(CXX) $(CXX_FLAGS) $(CUDA_INC) -c src/main.cpp -o main.o
 
-monte_carlo_advanced_kernel_v1.o: monte_carlo_advanced_kernel_v1.cu monte_carlo_advanced_kernel_v1.cuh
-	@echo "Compiling CUDA kernel (v1)..."
-	$(NVCC) $(NVCC_FLAGS) -c monte_carlo_advanced_kernel_v1.cu -o monte_carlo_advanced_kernel_v1.o
+# Test Suite
+TEST_TARGET = test_puct_mcts$(EXE_SUFFIX)
+TEST_OBJS = test_puct_mcts.o gpu_kernels.o init_tables.o mcts.o puct_mcts.o
 
-monte_carlo_advanced_v1.o: monte_carlo_advanced_v1.cpp monte_carlo_advanced_v1.hpp
-	@echo "Compiling C++ wrapper (v1)..."
-	$(CXX) $(CXX_FLAGS) $(CUDA_INC) -c monte_carlo_advanced_v1.cpp -o monte_carlo_advanced_v1.o
+test: $(TEST_TARGET)
+	@echo "Running PUCT MCTS tests..."
+	./$(TEST_TARGET)
 
-main_advanced_v1.o: main_advanced_v1.cpp monte_carlo_advanced_v1.hpp
-	@echo "Compiling main (v1)..."
-	$(CXX) $(CXX_FLAGS) $(CUDA_INC) -c main_advanced_v1.cpp -o main_advanced_v1.o
+$(TEST_TARGET): $(TEST_OBJS)
+	@echo "Linking test suite..."
+	$(CXX) $(CXX_FLAGS) $(TEST_OBJS) -o $(TEST_TARGET) $(CUDA_LIB) $(CUDA_LIBS)
+	@echo "Test suite built successfully!"
+
+test_puct_mcts.o: tests/test_puct_mcts.cpp include/puct_mcts.h include/mcts.h tests/test_positions.h
+	@echo "Compiling PUCT tests..."
+	$(CXX) $(CXX_FLAGS) $(CUDA_INC) -c tests/test_puct_mcts.cpp -o test_puct_mcts.o
 
 # Clean build artifacts
 clean:
-	@echo "Cleaning build artifacts..."
+	@echo "Cleaning..."
 ifeq ($(OS),Windows_NT)
-	-$(RM) *.o $(TARGET) $(TARGET_V1) 2>nul
+	-$(RM) *.o $(TARGET) $(TEST_TARGET) 2>nul
 else
-	$(RM) *.o $(TARGET) $(TARGET_V1)
+	$(RM) *.o $(TARGET) $(TEST_TARGET)
 endif
 	@echo "Clean complete!"
 
-# Run versions
+# Run engine
 run: $(TARGET)
-	./$(TARGET) 10000
+	./$(TARGET)
 
-run-v1: $(TARGET_V1)
-	./$(TARGET_V1) --sims 10000
-
-benchmark: $(TARGET_V1)
-	./$(TARGET_V1) --benchmark --sims 25000
-
+# Rebuild from scratch
 rebuild: clean all
 
-help:
-	@echo "Targets: all, v1, both, run, run-v1, benchmark, clean, help"
+# Build and run tests
+test-build: $(TEST_TARGET)
 
-.PHONY: all both v1 clean run run-v1 benchmark rebuild help
+test-run: $(TEST_TARGET)
+	./$(TEST_TARGET)
+
+# Build everything (engine + tests)
+all-with-tests: $(TARGET) $(TEST_TARGET)
+
+help:
+	@echo "PUCT MCTS Chess Engine - Build Targets:"
+	@echo "  make             - Build main engine"
+	@echo "  make test        - Build and run test suite"
+	@echo "  make test-build  - Build test suite only"
+	@echo "  make clean       - Clean build artifacts"
+	@echo "  make rebuild     - Clean and rebuild"
+	@echo "  make run         - Run main engine"
+ifeq ($(OS),Windows_NT)
+	-$(RM) *.o $(TARGET) 2>nul
+else
+	$(RM) *.o $(TARGET)
+endif
+	@echo "Clean complete!"
+
+# Run engine
+run: $(TARGET)
+	./$(TARGET)
+
+# Rebuild from scratch
+rebuild: clean all
+
+# Test engine
+test: $(TARGET)
+	@echo "Running PUCT MCTS test..."
+	./$(TARGET) --test

@@ -1,4 +1,5 @@
 #include "../include/mcts.h"
+#include "../include/puct_mcts.h"
 #include "../include/chess_types.cuh"
 #include <iostream>
 #include <string>
@@ -213,6 +214,8 @@ void print_usage(const char* prog) {
     std::cout << "\nOptions:\n";
     std::cout << "  --play          Play a self-play game (default)\n";
     std::cout << "  --benchmark     Run benchmark on starting position\n";
+    std::cout << "  --puct          Use PUCT MCTS (heuristic AlphaZero-style)\n";
+    std::cout << "  --original      Use original UCB1 MCTS (default)\n";
     std::cout << "  --sims N        Simulations per move (default: 5000)\n";
     std::cout << "  --batch N       Batch size for GPU (default: 512)\n";
     std::cout << "  --moves N       Max moves in self-play game (default: 200)\n";
@@ -222,6 +225,7 @@ void print_usage(const char* prog) {
 int main(int argc, char** argv) {
     // Parse arguments
     bool benchmark_mode = false;
+    bool use_puct = false;
     int simulations = 5000;
     int batch_size = 512;
     int max_moves = 200;
@@ -235,6 +239,10 @@ int main(int argc, char** argv) {
             benchmark_mode = true;
         } else if (arg == "--play") {
             benchmark_mode = false;
+        } else if (arg == "--puct") {
+            use_puct = true;
+        } else if (arg == "--original") {
+            use_puct = false;
         } else if (arg == "--sims" && i + 1 < argc) {
             simulations = std::stoi(argv[++i]);
         } else if (arg == "--batch" && i + 1 < argc) {
@@ -247,16 +255,80 @@ int main(int argc, char** argv) {
     // Print GPU info
     print_gpu_info();
 
-    // Create and initialize engine
-    std::cout << "Initializing engine...\n";
-    MCTSEngine engine(batch_size);
-    engine.init();
-    std::cout << "Engine ready!\n\n";
-
-    if (benchmark_mode) {
-        run_benchmark(engine, simulations);
+    if (use_puct) {
+        // PUCT MCTS (Heuristic AlphaZero)
+        std::cout << "\n=== PUCT MCTS Engine (Heuristic AlphaZero-style) ===\n";
+        std::cout << "NO Neural Networks - Pure tactical heuristics\n\n";
+        
+        PUCTConfig config;
+        config.num_simulations = simulations;
+        config.batch_size = batch_size;
+        config.verbose = true;
+        config.info_interval = simulations / 10;
+        
+        PUCTEngine engine(config);
+        engine.init();
+        std::cout << "PUCT Engine ready!\n\n";
+        
+        // Initialize position
+        BoardState pos;
+        init_startpos(&pos);
+        
+        if (benchmark_mode) {
+            std::cout << "Running PUCT benchmark...\n";
+            print_board(&pos);
+            
+            auto start = std::chrono::high_resolution_clock::now();
+            Move best_move = engine.search(pos);
+            auto end = std::chrono::high_resolution_clock::now();
+            
+            double elapsed = std::chrono::duration<double>(end - start).count();
+            
+            std::cout << "\n=== PUCT Results ===\n";
+            std::cout << "Best move: " << move_to_string(best_move) << "\n";
+            std::cout << "Total visits: " << engine.get_total_visits() << "\n";
+            std::cout << "Root value: " << engine.get_root_value() << "\n";
+            std::cout << "Time: " << std::fixed << std::setprecision(3) << elapsed << " s\n";
+            std::cout << "Sims/sec: " << (int)(simulations / elapsed) << "\n";
+            
+            // Print PV
+            std::vector<Move> pv = engine.get_pv(5);
+            std::cout << "PV: ";
+            for (Move m : pv) {
+                std::cout << move_to_string(m) << " ";
+            }
+            std::cout << "\n";
+        } else {
+            std::cout << "Playing game with PUCT MCTS...\n";
+            for (int move_num = 0; move_num < max_moves; move_num++) {
+                Move best_move = engine.search(pos);
+                
+                if (best_move == 0) {
+                    std::cout << "Game over at move " << move_num << "\n";
+                    break;
+                }
+                
+                std::cout << "Move " << (move_num + 1) << ": " << move_to_string(best_move) << "\n";
+                cpu_movegen::make_move_cpu(&pos, best_move);
+                
+                if (move_num % 10 == 9) {
+                    print_board(&pos);
+                }
+            }
+        }
     } else {
-        play_game(engine, simulations, max_moves);
+        // Original UCB1 MCTS
+        std::cout << "\n=== Original UCB1 MCTS Engine ===\n\n";
+        
+        MCTSEngine engine(batch_size);
+        engine.init();
+        std::cout << "Engine ready!\n\n";
+
+        if (benchmark_mode) {
+            run_benchmark(engine, simulations);
+        } else {
+            play_game(engine, simulations, max_moves);
+        }
     }
 
     return 0;
