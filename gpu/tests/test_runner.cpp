@@ -492,17 +492,18 @@ int main(int argc, char** argv) {
     }
 
     if (run_easy) {
+        // Depth 2 for mate-in-1/2 (proven stable)
         easy_stats = run_tactical_tests(EASY_TESTS, NUM_EASY_TESTS, "EASY", 2);
     }
 
     if (run_medium) {
-        // Use tactical solver for medium tactical tests (depth 2 max)
-        medium_stats = run_tactical_tests(MEDIUM_TESTS, NUM_MEDIUM_TESTS, "MEDIUM", 2);
+        // Depth 4 for mate-in-4 (iterative solver, no crashes)
+        medium_stats = run_tactical_tests(MEDIUM_TESTS, NUM_MEDIUM_TESTS, "MEDIUM", 4);
     }
 
     if (run_hard && engine) {
-        // Use MCTS for hard tests (still experimental)
-        hard_stats = run_engine_tests(*engine, HARD_TESTS, NUM_HARD_TESTS, "HARD");
+        // Depth 6 for mate-in-5/6 using tactical solver (faster than MCTS)
+        hard_stats = run_tactical_tests(HARD_TESTS, NUM_HARD_TESTS, "HARD", 6);
     }
 
     // Print summary
