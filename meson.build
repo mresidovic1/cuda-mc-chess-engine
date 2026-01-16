@@ -67,3 +67,8 @@ test('sequential-medium', test_suite_sequential,
 test('sequential-hard', test_suite_sequential,
      args: ['--mode=depth', '--depth=20', '--level=hard'],
      timeout: 400)
+
+# GPU subproject (if CUDA is available)
+if get_option('build_gpu')
+  subdir('gpu')
+endif

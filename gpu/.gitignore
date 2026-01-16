@@ -28,3 +28,5 @@ monte_carlo_advanced_v1.exe
 
 # Documentation directory (may contain generated or temporary docs)
 docs/
+
+*.ps1

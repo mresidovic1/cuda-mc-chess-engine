@@ -23,15 +23,15 @@ static Bitboard h_bishop_attacks[64][1 << BISHOP_MAGIC_BITS];
 
 // Copy functions declared in gpu_kernels.cu
 
-extern cudaError_t copy_knight_attacks(const Bitboard* data);
-extern cudaError_t copy_king_attacks(const Bitboard* data);
-extern cudaError_t copy_pawn_attacks(const Bitboard* data);
-extern cudaError_t copy_rook_magics(const Bitboard* data);
-extern cudaError_t copy_bishop_magics(const Bitboard* data);
-extern cudaError_t copy_rook_masks(const Bitboard* data);
-extern cudaError_t copy_bishop_masks(const Bitboard* data);
-extern cudaError_t copy_rook_attacks(const Bitboard* data);
-extern cudaError_t copy_bishop_attacks(const Bitboard* data);
+extern "C" cudaError_t copy_knight_attacks(const Bitboard* data);
+extern "C" cudaError_t copy_king_attacks(const Bitboard* data);
+extern "C" cudaError_t copy_pawn_attacks(const Bitboard* data);
+extern "C" cudaError_t copy_rook_magics(const Bitboard* data);
+extern "C" cudaError_t copy_bishop_magics(const Bitboard* data);
+extern "C" cudaError_t copy_rook_masks(const Bitboard* data);
+extern "C" cudaError_t copy_bishop_masks(const Bitboard* data);
+extern "C" cudaError_t copy_rook_attacks(const Bitboard* data);
+extern "C" cudaError_t copy_bishop_attacks(const Bitboard* data);
 
 // Pre-calculated magic numbers (chess programming wiki)
 

@@ -151,7 +151,7 @@ static_assert(sizeof(BoardState) <= 256, "BoardState exceeds 256 bytes!");
 // ============================================================================
 
 __host__ __device__ __forceinline__
-Move make_move(Square from, Square to, uint8_t flags = MOVE_QUIET) {
+Move encode_move(Square from, Square to, uint8_t flags = MOVE_QUIET) {
     return (Move)((flags << 12) | (to << 6) | from);
 }
 
@@ -249,6 +249,12 @@ int pop_lsb_index(Bitboard& b) {
     b &= b - 1;
     return idx;
 }
+
+// ============================================================================
+// Magic bitboard constants
+// ============================================================================
+#define ROOK_MAGIC_BITS   12
+#define BISHOP_MAGIC_BITS 9
 
 // ============================================================================
 // CUDA error checking macro

@@ -2,7 +2,6 @@
 // Tests heuristic AlphaZero-style MCTS without neural networks
 
 #include "../include/puct_mcts.h"
-#include "../include/mcts.h"
 #include "../include/chess_types.cuh"
 #include "../include/fen.h"
 #include "test_positions.h"
@@ -189,7 +188,9 @@ bool test_virtual_loss() {
     float after = node.Q();
     std::cout << "Q after removing virtual loss: " << after << "\n";
     
-    if (node.virtual_losses.load() == 0) {
+    // After removal, Q should return to original value
+    // (virtual loss mechanism works by modifying visits and total_value directly)
+    if (std::abs(after - before) < 0.001f) {
         std::cout << "✓ Virtual loss mechanism works correctly\n";
         return true;
     } else {
@@ -210,7 +211,7 @@ bool test_heuristic_priors() {
     init_startpos(&pos);
     
     // Test MVV-LVA scoring
-    Move dummy_move = make_move(E2, E4, MOVE_QUIET);
+    Move dummy_move = encode_move(E2, E4, MOVE_QUIET);
     float score = MoveHeuristics::heuristic_policy_prior(dummy_move, pos, 0);
     
     std::cout << "Base move score: " << score << "\n";
@@ -233,7 +234,7 @@ bool test_puct_startpos() {
     std::cout << "\n[TEST 5] PUCT Search - Starting Position\n";
     std::cout << "-----------------------------------------\n";
     
-    PUCTConfig config = PUCTConfig::Fast();
+    PUCTConfig config = PUCTConfig::Quick();
     config.num_simulations = 400;
     config.verbose = false;
     
@@ -270,45 +271,33 @@ bool test_puct_startpos() {
 // ============================================================================
 
 bool test_puct_vs_original() {
-    std::cout << "\n[TEST 6] PUCT vs Original UCB1 MCTS\n";
-    std::cout << "------------------------------------\n";
-    
+    std::cout << "\n[TEST 6] PUCT Engine Performance\n";
+    std::cout << "---------------------------------\n";
+
     BoardState pos;
     init_startpos(&pos);
-    
+
     // PUCT Engine
     std::cout << "\nRunning PUCT MCTS (400 sims)...\n";
-    PUCTConfig puct_config = PUCTConfig::Fast();
+    PUCTConfig puct_config = PUCTConfig::Quick();
     puct_config.num_simulations = 400;
     puct_config.verbose = false;
-    
+
     PUCTEngine puct_engine(puct_config);
     puct_engine.init();
-    
+
     auto puct_start = std::chrono::high_resolution_clock::now();
     Move puct_move = puct_engine.search(pos);
     auto puct_end = std::chrono::high_resolution_clock::now();
     double puct_time = std::chrono::duration<double, std::milli>(puct_end - puct_start).count();
-    
-    // Original MCTS
-    std::cout << "Running Original MCTS (400 sims)...\n";
-    MCTSEngine original_engine(256);
-    original_engine.init();
-    
-    auto orig_start = std::chrono::high_resolution_clock::now();
-    Move orig_move = original_engine.search(pos, 400);
-    auto orig_end = std::chrono::high_resolution_clock::now();
-    double orig_time = std::chrono::duration<double, std::milli>(orig_end - orig_start).count();
-    
+
     std::cout << "\nResults:\n";
-    std::cout << "PUCT Move:     " << move_to_uci(puct_move) 
+    std::cout << "PUCT Move:     " << move_to_uci(puct_move)
               << " (Value: " << puct_engine.get_root_value() << ")\n";
-    std::cout << "Original Move: " << move_to_uci(orig_move) << "\n";
     std::cout << "PUCT Time:     " << puct_time << " ms\n";
-    std::cout << "Original Time: " << orig_time << " ms\n";
-    std::cout << "Speedup:       " << (orig_time / puct_time) << "x\n";
-    
-    std::cout << "✓ Comparison completed\n";
+    std::cout << "Sims/sec:      " << (int)(400 * 1000.0 / puct_time) << "\n";
+
+    std::cout << "✓ Performance test completed\n";
     return true;
 }
 

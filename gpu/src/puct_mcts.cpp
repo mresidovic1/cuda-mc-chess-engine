@@ -31,11 +31,7 @@ extern "C" void launch_static_eval(
 );
 
 // External CPU move generation
-namespace cpu_movegen {
-    extern int generate_legal_moves_cpu(const BoardState* pos, Move* moves);
-    extern void make_move_cpu(BoardState* pos, Move m);
-    extern bool in_check_cpu(const BoardState* pos);
-}
+#include "../include/cpu_movegen.h"
 
 // ============================================================================
 // HEURISTIC MOVE EVALUATION
@@ -232,53 +228,71 @@ Move PUCTEngine::search(const BoardState& root_state) {
     while (simulations_done < config.num_simulations) {
         int batch_size = std::min(config.batch_size, config.num_simulations - simulations_done);
         std::vector<PUCTNode*> leaf_nodes;
+        std::vector<std::vector<Move>> tree_moves_batch;  // Track moves for RAVE
         leaf_nodes.reserve(batch_size);
-        
-        // SELECTION PHASE: Traverse tree using PUCT
+        tree_moves_batch.reserve(batch_size);
+
+        // SELECTION PHASE: Traverse tree using PUCT (with move tracking for RAVE)
         for (int i = 0; i < batch_size; i++) {
-            PUCTNode* node = select(root.get());
-            
-            if (node) {
-                leaf_nodes.push_back(node);
-                
-                // Add virtual loss
-                if (config.use_virtual_loss) {
-                    PUCTNode* current = node;
-                    while (current) {
-                        current->add_virtual_loss(config.virtual_loss);
-                        current = current->parent;
-                    }
+            std::vector<Move> tree_moves;
+            PUCTNode* node;
+
+            if (config.use_rave) {
+                // Use RAVE-aware selection that tracks moves
+                node = select_and_track(root.get(), tree_moves);
+            } else {
+                // Standard selection without move tracking
+                node = select(root.get());
+            }
+
+            // Add virtual loss for parallel exploration
+            if (config.use_virtual_loss && node) {
+                PUCTNode* current = node;
+                while (current) {
+                    current->add_virtual_loss(config.virtual_loss);
+                    current = current->parent;
                 }
             }
+
+            if (node) {
+                leaf_nodes.push_back(node);
+                tree_moves_batch.push_back(tree_moves);
+            }
         }
-        
+
         if (leaf_nodes.empty()) break;
-        
+
         // EXPANSION & EVALUATION PHASE: GPU batch evaluation
         expand_and_evaluate_batch(leaf_nodes);
-        
+
         // BACKPROPAGATION PHASE
-        for (PUCTNode* node : leaf_nodes) {
+        for (size_t i = 0; i < leaf_nodes.size(); i++) {
+            PUCTNode* node = leaf_nodes[i];
             float value = node->value_estimate;
-            
-            // Remove virtual loss and backpropagate
-            PUCTNode* current = node;
-            while (current) {
-                if (config.use_virtual_loss) {
-                    current->remove_virtual_loss(config.virtual_loss);
+
+            if (config.use_rave) {
+                // RAVE backpropagation with AMAF updates
+                backpropagate_with_rave(node, value, tree_moves_batch[i]);
+            } else {
+                // Standard backpropagation
+                PUCTNode* current = node;
+                while (current) {
+                    if (config.use_virtual_loss) {
+                        current->remove_virtual_loss(config.virtual_loss);
+                    }
+
+                    current->update(value);
+                    value = 1.0f - value;  // Flip for opponent (value is in [0,1])
+
+                    // Update history heuristic for good moves
+                    if (current->parent && value > 0.3f) {
+                        history_table.update(current->move_from_parent,
+                                           current->state.side_to_move ^ 1,
+                                           current->depth);
+                    }
+
+                    current = current->parent;
                 }
-                
-                current->update(value);
-                value = -value;  // Flip for opponent
-                
-                // Update history heuristic for good moves
-                if (current->parent && value > 0.3f) {
-                    history_table.update(current->move_from_parent, 
-                                       current->state.side_to_move ^ 1, 
-                                       current->depth);
-                }
-                
-                current = current->parent;
             }
         }
         
@@ -370,25 +384,28 @@ PUCTNode* PUCTEngine::select(PUCTNode* node) {
 
 PUCTNode* PUCTEngine::best_child_puct(PUCTNode* node) {
     if (node->children.empty()) return nullptr;
-    
+
     float c_puct = config.use_dynamic_cpuct ? get_dynamic_cpuct() : config.c_puct;
     int parent_visits = node->visits.load(std::memory_order_relaxed);
-    
+
     // FPU: First Play Urgency
     float fpu_value = config.use_fpu ? (node->Q() - config.fpu_reduction) : 0.0f;
-    
+
     PUCTNode* best_child = nullptr;
     float best_score = -std::numeric_limits<float>::infinity();
-    
+
     for (auto& child : node->children) {
-        float score = child->puct_score(parent_visits, c_puct, fpu_value);
-        
+        // Use RAVE-enhanced score if enabled, otherwise standard PUCT
+        float score = config.use_rave ?
+            child->rave_puct_score(parent_visits, c_puct, fpu_value, config.rave_k, true) :
+            child->puct_score(parent_visits, c_puct, fpu_value);
+
         if (score > best_score) {
             best_score = score;
             best_child = child.get();
         }
     }
-    
+
     return best_child;
 }
 
@@ -406,15 +423,15 @@ void PUCTEngine::expand_and_evaluate(PUCTNode* node) {
     generate_legal_moves(node);
     
     if (node->is_terminal) {
-        // Terminal evaluation
+        // Terminal evaluation (values in [0, 1] from perspective of side to move)
         if (node->legal_moves.empty()) {
             if (cpu_movegen::in_check_cpu(&node->state)) {
-                node->value_estimate = -1.0f;  // Checkmate
+                node->value_estimate = 0.0f;   // Checkmate = LOSS for side to move
             } else {
-                node->value_estimate = 0.0f;   // Stalemate
+                node->value_estimate = 0.5f;   // Stalemate = DRAW
             }
         } else {
-            node->value_estimate = 0.0f;  // Draw
+            node->value_estimate = 0.5f;  // Draw (50-move, repetition, etc.)
         }
         node->evaluated = true;
         return;
@@ -441,9 +458,10 @@ void PUCTEngine::expand_and_evaluate_batch(const std::vector<PUCTNode*>& nodes) 
         
         if (node->is_terminal) {
             if (node->legal_moves.empty()) {
-                node->value_estimate = cpu_movegen::in_check_cpu(&node->state) ? -1.0f : 0.0f;
+                // Checkmate = 0.0 (loss), Stalemate = 0.5 (draw)
+                node->value_estimate = cpu_movegen::in_check_cpu(&node->state) ? 0.0f : 0.5f;
             } else {
-                node->value_estimate = 0.0f;
+                node->value_estimate = 0.5f;  // Draw
             }
             node->evaluated = true;
         } else {
@@ -558,6 +576,21 @@ void PUCTEngine::compute_move_priors(PUCTNode* node) {
             node->move_priors[i] = uniform;
         }
     }
+
+    // Sort moves by prior (descending) so high-prior moves are expanded first
+    // This is critical for PUCT efficiency - explore promising moves first!
+    std::vector<std::pair<float, Move>> sorted_moves;
+    sorted_moves.reserve(node->legal_moves.size());
+    for (size_t i = 0; i < node->legal_moves.size(); i++) {
+        sorted_moves.emplace_back(node->move_priors[i], node->legal_moves[i]);
+    }
+    std::sort(sorted_moves.begin(), sorted_moves.end(),
+              [](const auto& a, const auto& b) { return a.first > b.first; });
+
+    for (size_t i = 0; i < sorted_moves.size(); i++) {
+        node->move_priors[i] = sorted_moves[i].first;
+        node->legal_moves[i] = sorted_moves[i].second;
+    }
 }
 
 // ============================================================================
@@ -596,11 +629,14 @@ Move PUCTEngine::select_move_by_temperature(float temperature) {
     }
     
     // PRIORITY: Check for immediate checkmate (terminal win)
+    // In [0,1] range: 1.0 = win for the side to move AT THAT NODE
+    // A child node where opponent is checkmated has value_estimate = 1.0 (win for us)
     for (auto& child : root->children) {
         if (child->is_terminal && child->evaluated) {
-            // Terminal node with value > 0.9 = CHECKMATE for us!
+            // Terminal node: if opponent is checkmated, child->value_estimate = 1.0
+            // and Q() should also be close to 1.0 after backprop
             float child_q = child->Q();
-            if (child_q < -0.9f) {  // Negative because it's opponent's loss = our win
+            if (child_q > 0.9f) {  // High value = good for us (we made the move)
                 return child->move_from_parent;
             }
         }
@@ -720,15 +756,97 @@ std::vector<Move> PUCTEngine::get_pv(int max_length) const {
 
 void PUCTEngine::ensure_batch_capacity(int size) {
     if (size <= max_batch_size) return;
-    
+
     if (d_boards) cudaFree(d_boards);
     if (d_results) cudaFree(d_results);
     if (h_boards) cudaFreeHost(h_boards);
     if (h_results) cudaFreeHost(h_results);
-    
+
     max_batch_size = size;
     CUDA_CHECK(cudaMalloc(&d_boards, size * sizeof(BoardState)));
     CUDA_CHECK(cudaMalloc(&d_results, size * sizeof(float)));
     CUDA_CHECK(cudaMallocHost(&h_boards, size * sizeof(BoardState)));
     CUDA_CHECK(cudaMallocHost(&h_results, size * sizeof(float)));
+}
+
+// ============================================================================
+// RAVE (Rapid Action Value Estimation) IMPLEMENTATION
+// ============================================================================
+
+PUCTNode* PUCTEngine::select_and_track(PUCTNode* node, std::vector<Move>& tree_moves) {
+    // Select leaf node while tracking moves played during tree traversal
+    tree_moves.clear();
+
+    while (!node->is_leaf() && node->is_fully_expanded()) {
+        // Select best child using PUCT (or RAVE-PUCT)
+        PUCTNode* child = best_child_puct(node);
+
+        if (!child) break;
+
+        // Track the move taken
+        tree_moves.push_back(child->move_from_parent);
+
+        node = child;
+    }
+
+    return node;
+}
+
+void PUCTEngine::backpropagate_with_rave(PUCTNode* node, float value,
+                                         const std::vector<Move>& tree_moves) {
+    // Backpropagate value up the tree while updating AMAF statistics
+    PUCTNode* current = node;
+    int depth = 0;
+
+    while (current) {
+        // Remove virtual loss
+        if (config.use_virtual_loss) {
+            current->remove_virtual_loss(config.virtual_loss);
+        }
+
+        // Update standard PUCT statistics
+        current->update(value);
+
+        // Update AMAF statistics if RAVE is enabled and within depth limit
+        if (config.use_rave && depth < config.rave_update_depth && current->parent) {
+            update_amaf_stats(current->parent, tree_moves, value);
+        }
+
+        // Flip value for opponent's perspective
+        value = 1.0f - value;
+
+        // Update history heuristic for good moves
+        if (current->parent && value > 0.3f) {
+            history_table.update(current->move_from_parent,
+                               current->state.side_to_move ^ 1,
+                               current->depth);
+        }
+
+        current = current->parent;
+        depth++;
+    }
+}
+
+void PUCTEngine::update_amaf_stats(PUCTNode* node, const std::vector<Move>& sim_moves,
+                                   float value) {
+    // Update AMAF statistics for all children whose moves appear in the simulation
+    if (!node || node->children.empty()) return;
+
+    for (auto& child : node->children) {
+        Move child_move = child->move_from_parent;
+
+        // Check if this move appeared anywhere in the simulation path
+        bool move_played = false;
+        for (Move sim_move : sim_moves) {
+            if (sim_move == child_move) {
+                move_played = true;
+                break;
+            }
+        }
+
+        // If the move was played in the simulation, update AMAF stats
+        if (move_played) {
+            child->update_amaf(value);
+        }
+    }
 }

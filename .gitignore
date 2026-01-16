@@ -58,4 +58,7 @@ venv/
 Jaglavak-master/
 perft_gpu-master/
 
+# Claude and documentation
 .claude
+docs/
+/gpu/docs/

@@ -1,10 +1,9 @@
-// test_runner.cpp - Main test harness for GPU MCTS Chess Engine
-// Tests FEN parsing, move generation, and engine search
+// test_runner.cpp - Main test harness for GPU PUCT MCTS Chess Engine
+// Tests FEN parsing, move generation, and tactical solver
 
 #include "../include/chess_types.cuh"
 #include "../include/fen.h"
-#include "../include/mcts.h"
-#include "../include/search_config.h"
+#include "../include/cpu_movegen.h"
 #include "test_positions.h"
 #include <iostream>
 #include <iomanip>
@@ -260,7 +259,7 @@ TestStats run_perft_tests() {
 }
 
 // ============================================================================
-// Engine Tests
+// Tactical Tests
 // ============================================================================
 
 // Run tactical tests using the GPU negamax solver
@@ -349,60 +348,6 @@ TestStats run_tactical_tests(const TestPosition* tests, int num_tests,
     return stats;
 }
 
-TestStats run_engine_tests(MCTSEngine& engine, const TestPosition* tests, int num_tests,
-                           const std::string& category) {
-    std::cout << "\n" << std::string(60, '=') << "\n";
-    std::cout << "ENGINE TESTS - " << category << "\n";
-    std::cout << std::string(60, '=') << "\n\n";
-
-    TestStats stats;
-
-    for (int i = 0; i < num_tests; i++) {
-        const auto& test = tests[i];
-
-        std::cout << "Test " << (i + 1) << "/" << num_tests << ": " << test.name << "\n";
-        std::cout << "FEN: " << test.fen << "\n";
-
-        BoardState board;
-        if (ParseFEN(test.fen, board) != FENError::OK) {
-            std::cout << "[ERROR] Failed to parse FEN\n\n";
-            stats.add_fail(0);
-            continue;
-        }
-
-        // Configure search
-        SearchConfig config;
-        config.max_iterations = test.suggested_iterations;
-        config.simulations_per_batch = 512;
-        config.verbose = false;
-        config.playout_mode = PlayoutMode::QUIESCENCE;  // Use quiescence for tactical tests
-        config.quiescence_depth = 3;  // Limit depth to avoid GPU stack issues
-
-        auto start = std::chrono::high_resolution_clock::now();
-        SearchResult result = engine.searchWithConfig(board, config);
-        auto end = std::chrono::high_resolution_clock::now();
-        double time_ms = std::chrono::duration<double, std::milli>(end - start).count();
-
-        std::string engine_move = move_to_uci(result.best_move);
-        bool passed = (engine_move == test.expected_move);
-
-        std::cout << "Engine:   " << engine_move;
-        std::cout << " (score: " << std::fixed << std::setprecision(3) << result.score;
-        std::cout << ", nodes: " << result.nodes_searched;
-        std::cout << ", sims: " << result.simulations_run;
-        std::cout << ", " << std::setprecision(0) << time_ms << " ms)\n";
-        std::cout << "Result:   " << (passed ? "[PASS]" : "[FAIL]") << "\n\n";
-
-        if (passed) {
-            stats.add_pass(time_ms);
-        } else {
-            stats.add_fail(time_ms);
-        }
-    }
-
-    return stats;
-}
-
 // ============================================================================
 // Print Summary
 // ============================================================================
@@ -468,19 +413,15 @@ int main(int argc, char** argv) {
     }
 
     std::cout << std::string(60, '=') << "\n";
-    std::cout << "GPU MCTS CHESS ENGINE TEST SUITE\n";
+    std::cout << "GPU TACTICAL CHESS ENGINE TEST SUITE\n";
     std::cout << std::string(60, '=') << "\n";
 
-    TestStats fen_stats, perft_stats, easy_stats, medium_stats, hard_stats;
-    MCTSEngine* engine = nullptr;
+    // Initialize attack tables for CPU movegen
+    std::cout << "\nInitializing attack tables...\n";
+    init_attack_tables();
+    std::cout << "Ready.\n";
 
-    // Initialize engine if needed
-    if (run_easy || run_medium || run_hard) {
-        std::cout << "\nInitializing GPU engine...\n";
-        engine = new MCTSEngine(512);
-        engine->init();
-        std::cout << "Engine ready.\n";
-    }
+    TestStats fen_stats, perft_stats, easy_stats, medium_stats, hard_stats;
 
     // Run tests
     if (run_fen) {
@@ -501,7 +442,7 @@ int main(int argc, char** argv) {
         medium_stats = run_tactical_tests(MEDIUM_TESTS, NUM_MEDIUM_TESTS, "MEDIUM", 4);
     }
 
-    if (run_hard && engine) {
+    if (run_hard) {
         // Depth 6 for mate-in-5/6 using tactical solver (faster than MCTS)
         hard_stats = run_tactical_tests(HARD_TESTS, NUM_HARD_TESTS, "HARD", 6);
     }
@@ -530,7 +471,7 @@ int main(int argc, char** argv) {
     }
 
     if (run_easy) {
-        print_summary("Easy Engine Tests", easy_stats);
+        print_summary("Easy Tactical Tests", easy_stats);
         overall.total += easy_stats.total;
         overall.passed += easy_stats.passed;
         overall.failed += easy_stats.failed;
@@ -538,7 +479,7 @@ int main(int argc, char** argv) {
     }
 
     if (run_medium) {
-        print_summary("Medium Engine Tests", medium_stats);
+        print_summary("Medium Tactical Tests", medium_stats);
         overall.total += medium_stats.total;
         overall.passed += medium_stats.passed;
         overall.failed += medium_stats.failed;
@@ -546,7 +487,7 @@ int main(int argc, char** argv) {
     }
 
     if (run_hard) {
-        print_summary("Hard Engine Tests", hard_stats);
+        print_summary("Hard Tactical Tests", hard_stats);
         overall.total += hard_stats.total;
         overall.passed += hard_stats.passed;
         overall.failed += hard_stats.failed;
@@ -557,9 +498,6 @@ int main(int argc, char** argv) {
     print_summary("OVERALL", overall);
 
     std::cout << "\n";
-
-    // Cleanup
-    if (engine) delete engine;
 
     // Return exit code based on test results
     return (overall.failed > 0) ? 1 : 0;
