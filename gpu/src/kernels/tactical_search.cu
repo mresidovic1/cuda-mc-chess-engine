@@ -7,12 +7,7 @@
 #define MATE_SCORE 30000
 #define INF_SCORE 32000
 
-// ============================================================================
 // TACTICAL OPTIMIZATIONS - Pruning, Enhanced Move Ordering
-// ============================================================================
-
-// TACTICAL OPTIMIZATIONS - Pruning, Enhanced Move Ordering
-// ============================================================================
 
 // Check if move gives check
 __device__ __forceinline__

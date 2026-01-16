@@ -1,3 +1,5 @@
+// https://www.chessprogramming.org/Monte-Carlo_Tree_Search
+
 #include "../include/puct_mcts.h"
 #include <algorithm>
 #include <iostream>
@@ -6,36 +8,31 @@
 #include <cstring>
 
 // External GPU playout launchers
-extern "C" void launch_quiescence_playout(
-    const BoardState* d_boards,
-    float* d_results,
-    int numBoards,
-    unsigned int seed,
-    int max_q_depth,
-    cudaStream_t stream
-);
+// extern "C" void launch_quiescence_playout(
+//     const BoardState* d_boards,
+//     float* d_results,
+//     int numBoards,
+//     unsigned int seed,
+//     int max_q_depth,
+//     cudaStream_t stream
+// );
 
-extern "C" void launch_eval_playout(
-    const BoardState* d_boards,
-    float* d_results,
-    int numBoards,
-    unsigned int seed,
-    cudaStream_t stream
-);
+// extern "C" void launch_eval_playout(
+//     const BoardState* d_boards,
+//     float* d_results,
+//     int numBoards,
+//     unsigned int seed,
+//     cudaStream_t stream
+// );
 
-extern "C" void launch_static_eval(
-    const BoardState* d_boards,
-    float* d_results,
-    int numBoards,
-    cudaStream_t stream
-);
+// extern "C" void launch_static_eval(
+//     const BoardState* d_boards,
+//     float* d_results,
+//     int numBoards,
+//     cudaStream_t stream
+// );
 
-// External CPU move generation
 #include "../include/cpu_movegen.h"
-
-// ============================================================================
-// HEURISTIC MOVE EVALUATION
-// ============================================================================
 
 // Simplified piece-square tables for move ordering
 static const int PST_BONUS[6] = {
@@ -60,12 +57,14 @@ int MoveHeuristics::mvv_lva_score(Move move, const BoardState& state) {
     
     if (!is_capture(move)) return 0;
     
+    // Bits 0-5 src square, 6-11 destination
     int to_sq = (move >> 6) & 0x3F;
     int from_sq = move & 0x3F;
     
     // Find captured piece
     int victim_value = 0;
     for (int piece = 0; piece < 6; piece++) {
+        // Get all piece position for a piece of 1 kind and probe it with a bitboard where only the to_sq is active
         if (state.pieces[state.side_to_move ^ 1][piece] & (1ULL << to_sq)) {
             victim_value = piece_values[piece];
             break;
@@ -75,6 +74,7 @@ int MoveHeuristics::mvv_lva_score(Move move, const BoardState& state) {
     // Find attacker piece
     int attacker_value = 0;
     for (int piece = 0; piece < 6; piece++) {
+        // Similar logic as previous
         if (state.pieces[state.side_to_move][piece] & (1ULL << from_sq)) {
             attacker_value = piece_values[piece];
             break;
@@ -86,17 +86,17 @@ int MoveHeuristics::mvv_lva_score(Move move, const BoardState& state) {
 }
 
 int MoveHeuristics::see_score(Move move, const BoardState& state) {
-    // Simplified SEE - just MVV-LVA for now
+    // Simplified SEE - MVV-LVA currently -> will be expanded
     return mvv_lva_score(move, state);
 }
 
 bool MoveHeuristics::is_killer_move(Move move, int ply) {
-    // Will be checked against killer_moves table in engine
-    return false;  // Placeholder
+    // Todo - will be implemented
+    return false;
 }
 
 int MoveHeuristics::history_score(Move move, int color) {
-    // Will be checked against history table in engine
+    // Todo - will be implemented
     return 0;  // Placeholder
 }
 
@@ -108,6 +108,7 @@ bool MoveHeuristics::is_check(Move move, const BoardState& state) {
 }
 
 bool MoveHeuristics::is_capture(Move move) {
+    // Bits 12-15 - special flags (capture, promotion, en passant, castling)
     int flags = (move >> 12) & 0xF;
     return (flags == MOVE_CAPTURE) || 
            (flags == MOVE_EP_CAPTURE) ||
@@ -137,44 +138,40 @@ float MoveHeuristics::heuristic_policy_prior(Move move, const BoardState& state,
                                               float capture_weight, float check_weight) {
     float score = 1.0f;  // Base score
     
-    // Tactical bonuses
+    // Tactical bonuses - eval bonus for types of moves - heuristic
     if (is_capture(move)) {
         int mvv_lva = mvv_lva_score(move, state);
-        score += (mvv_lva / 100.0f) * capture_weight;  // Use config weight
+        score += (mvv_lva / 100.0f) * capture_weight;  
     }
     
     if (is_check(move, state)) {
-        score += check_weight;  // Use config weight (CRITICAL for mate detection!)
+        score += check_weight;  
     }
     
     if (is_promotion(move)) {
-        score += 8.0f;  // Very strong bonus for promotions
+        score += 8.0f;  
     }
     
     if (is_passed_pawn_push(move, state)) {
         score += 2.0f;
     }
     
-    // Ensure positive
     return std::max(0.1f, score);
 }
-
-// ============================================================================
-// PUCT ENGINE IMPLEMENTATION
-// ============================================================================
 
 PUCTEngine::PUCTEngine(const PUCTConfig& cfg)
     : config(cfg)
     , root(nullptr)
-    , d_boards(nullptr)
+    , d_boards(nullptr) // Device variables
     , d_results(nullptr)
-    , h_boards(nullptr)
+    , h_boards(nullptr) // Host variables
     , h_results(nullptr)
     , max_batch_size(0)
-    , rng(std::chrono::steady_clock::now().time_since_epoch().count())
+    , rng(std::chrono::steady_clock::now().time_since_epoch().count()) // Randomness
     , total_simulations(0)
 {
-    killer_moves.clear();
+    // Will be implemented
+    killer_moves.clear(); 
     history_table.clear();
 }
 
@@ -194,7 +191,7 @@ void PUCTEngine::init() {
     CUDA_CHECK(cudaMallocHost(&h_boards, max_batch_size * sizeof(BoardState)));
     CUDA_CHECK(cudaMallocHost(&h_results, max_batch_size * sizeof(float)));
     
-    std::cout << "PUCT Engine initialized (heuristic-based, NO neural networks)" << std::endl;
+    std::cout << "PUCT Engine initialized (heuristic-based)" << std::endl;
     std::cout << "Batch size: " << max_batch_size << std::endl;
 }
 
@@ -217,7 +214,7 @@ Move PUCTEngine::search(const BoardState& root_state) {
     // Compute heuristic priors for root moves
     compute_move_priors(root.get());
     
-    // Add Dirichlet noise for exploration
+    // Add Dirichlet noise for exploration -- alpha zerp radi - ne znam zasto -- previse matematike trenutno 
     if (config.add_dirichlet_noise) {
         add_dirichlet_noise_to_root();
     }
@@ -228,11 +225,11 @@ Move PUCTEngine::search(const BoardState& root_state) {
     while (simulations_done < config.num_simulations) {
         int batch_size = std::min(config.batch_size, config.num_simulations - simulations_done);
         std::vector<PUCTNode*> leaf_nodes;
-        std::vector<std::vector<Move>> tree_moves_batch;  // Track moves for RAVE
+        std::vector<std::vector<Move>> tree_moves_batch;  // Track moves for RAVE - Rapid Action Value Estimation
         leaf_nodes.reserve(batch_size);
         tree_moves_batch.reserve(batch_size);
 
-        // SELECTION PHASE: Traverse tree using PUCT (with move tracking for RAVE)
+        // Traverse tree using PUCT (with move tracking for RAVE) - http://hal.inria.fr/inria-00485555/en/
         for (int i = 0; i < batch_size; i++) {
             std::vector<Move> tree_moves;
             PUCTNode* node;
@@ -245,7 +242,7 @@ Move PUCTEngine::search(const BoardState& root_state) {
                 node = select(root.get());
             }
 
-            // Add virtual loss for parallel exploration
+            // Add virtual loss for parallel exploration - if no virtual loss then all threads go down same path
             if (config.use_virtual_loss && node) {
                 PUCTNode* current = node;
                 while (current) {
@@ -262,16 +259,16 @@ Move PUCTEngine::search(const BoardState& root_state) {
 
         if (leaf_nodes.empty()) break;
 
-        // EXPANSION & EVALUATION PHASE: GPU batch evaluation
+        // Expansion and evaluation - GPU batch evaluation
         expand_and_evaluate_batch(leaf_nodes);
 
-        // BACKPROPAGATION PHASE
+        // Backpropagation
         for (size_t i = 0; i < leaf_nodes.size(); i++) {
             PUCTNode* node = leaf_nodes[i];
             float value = node->value_estimate;
 
             if (config.use_rave) {
-                // RAVE backpropagation with AMAF updates
+                // RAVE backpropagation with AMAF (all moves as first) updates
                 backpropagate_with_rave(node, value, tree_moves_batch[i]);
             } else {
                 // Standard backpropagation
@@ -282,7 +279,7 @@ Move PUCTEngine::search(const BoardState& root_state) {
                     }
 
                     current->update(value);
-                    value = 1.0f - value;  // Flip for opponent (value is in [0,1])
+                    value = 1.0f - value;
 
                     // Update history heuristic for good moves
                     if (current->parent && value > 0.3f) {
@@ -298,36 +295,15 @@ Move PUCTEngine::search(const BoardState& root_state) {
         
         simulations_done += leaf_nodes.size();
         total_simulations += leaf_nodes.size();
-        
-        // Print progress
-        if (config.verbose && config.info_interval > 0 && 
-            simulations_done % config.info_interval == 0) {
-            std::cout << "info sims " << simulations_done 
-                      << " / " << config.num_simulations
-                      << " value " << root->Q()
-                      << " nps " << (simulations_done * 1000 / 
-                                    (std::chrono::steady_clock::now().time_since_epoch().count() % 1000000))
-                      << std::endl;
-        }
     }
     
     // Select best move
     Move best_move = select_move_by_temperature(config.temperature);
     
-    if (config.verbose) {
-        std::cout << "Best move: " << ((best_move & 0x3F) % 8) << "," << ((best_move & 0x3F) / 8)
-                  << " -> " << (((best_move >> 6) & 0x3F) % 8) << "," << (((best_move >> 6) & 0x3F) / 8)
-                  << " | Value: " << root->Q()
-                  << " | Visits: " << root->visits.load()
-                  << std::endl;
-    }
-    
     return best_move;
 }
 
-// ============================================================================
 // SELECTION PHASE (PUCT)
-// ============================================================================
 
 PUCTNode* PUCTEngine::select(PUCTNode* node) {
     while (true) {
@@ -415,32 +391,27 @@ float PUCTEngine::get_dynamic_cpuct() const {
     return std::log((1.0f + N + config.c_puct_base) / config.c_puct_base) + config.c_puct_init;
 }
 
-// ============================================================================
-// EXPANSION & EVALUATION PHASE
-// ============================================================================
+// Expanstion and evaluation
 
 void PUCTEngine::expand_and_evaluate(PUCTNode* node) {
     generate_legal_moves(node);
     
     if (node->is_terminal) {
-        // Terminal evaluation (values in [0, 1] from perspective of side to move)
         if (node->legal_moves.empty()) {
             if (cpu_movegen::in_check_cpu(&node->state)) {
-                node->value_estimate = 0.0f;   // Checkmate = LOSS for side to move
+                node->value_estimate = 0.0f;   
             } else {
                 node->value_estimate = 0.5f;   // Stalemate = DRAW
             }
         } else {
-            node->value_estimate = 0.5f;  // Draw (50-move, repetition, etc.)
+            node->value_estimate = 0.5f;  // Draw (
         }
         node->evaluated = true;
         return;
     }
     
-    // Compute heuristic priors
     compute_move_priors(node);
     
-    // GPU evaluation via playout
     std::vector<PUCTNode*> batch = {node};
     evaluate_positions_gpu(batch);
 }
@@ -458,7 +429,7 @@ void PUCTEngine::expand_and_evaluate_batch(const std::vector<PUCTNode*>& nodes) 
         
         if (node->is_terminal) {
             if (node->legal_moves.empty()) {
-                // Checkmate = 0.0 (loss), Stalemate = 0.5 (draw)
+                // Checkmate = 0.0 (loss), stalemate = 0.5 (draw)
                 node->value_estimate = cpu_movegen::in_check_cpu(&node->state) ? 0.0f : 0.5f;
             } else {
                 node->value_estimate = 0.5f;  // Draw
@@ -518,9 +489,7 @@ void PUCTEngine::evaluate_positions_gpu(const std::vector<PUCTNode*>& nodes) {
     }
 }
 
-// ============================================================================
-// MOVE GENERATION & HEURISTIC PRIORS
-// ============================================================================
+// Move generation & heuristics prior
 
 void PUCTEngine::generate_legal_moves(PUCTNode* node) {
     if (node->moves_generated) return;
@@ -593,9 +562,7 @@ void PUCTEngine::compute_move_priors(PUCTNode* node) {
     }
 }
 
-// ============================================================================
-// ROOT NODE HANDLING
-// ============================================================================
+// Root node handling
 
 void PUCTEngine::add_dirichlet_noise_to_root() {
     if (!root || root->move_priors.empty()) return;
@@ -628,15 +595,12 @@ Move PUCTEngine::select_move_by_temperature(float temperature) {
         return root ? (root->legal_moves.empty() ? 0 : root->legal_moves[0]) : 0;
     }
     
-    // PRIORITY: Check for immediate checkmate (terminal win)
-    // In [0,1] range: 1.0 = win for the side to move AT THAT NODE
-    // A child node where opponent is checkmated has value_estimate = 1.0 (win for us)
+    //  Check for immediate checkmate 
     for (auto& child : root->children) {
         if (child->is_terminal && child->evaluated) {
             // Terminal node: if opponent is checkmated, child->value_estimate = 1.0
-            // and Q() should also be close to 1.0 after backprop
             float child_q = child->Q();
-            if (child_q > 0.9f) {  // High value = good for us (we made the move)
+            if (child_q > 0.9f) {  
                 return child->move_from_parent;
             }
         }
@@ -651,7 +615,6 @@ Move PUCTEngine::select_move_by_temperature(float temperature) {
     }
     
     if (temperature < 0.01f) {
-        // Greedy - but also consider Q value for ties
         int max_visits = *std::max_element(visits.begin(), visits.end());
         float best_q = -999.0f;
         Move best_move = moves[0];
@@ -685,9 +648,7 @@ Move PUCTEngine::select_move_by_temperature(float temperature) {
     return moves[dist(rng)];
 }
 
-// ============================================================================
-// UTILITY
-// ============================================================================
+// Helpers/utility
 
 std::vector<float> PUCTEngine::get_move_probabilities(float temperature) {
     std::vector<float> probs(root->legal_moves.size(), 0.0f);
@@ -769,16 +730,15 @@ void PUCTEngine::ensure_batch_capacity(int size) {
     CUDA_CHECK(cudaMallocHost(&h_results, size * sizeof(float)));
 }
 
-// ============================================================================
-// RAVE (Rapid Action Value Estimation) IMPLEMENTATION
-// ============================================================================
+
+// RAVE (Rapid Action Value Estimation)
 
 PUCTNode* PUCTEngine::select_and_track(PUCTNode* node, std::vector<Move>& tree_moves) {
     // Select leaf node while tracking moves played during tree traversal
     tree_moves.clear();
 
     while (!node->is_leaf() && node->is_fully_expanded()) {
-        // Select best child using PUCT (or RAVE-PUCT)
+        // Select best child using PUCT
         PUCTNode* child = best_child_puct(node);
 
         if (!child) break;

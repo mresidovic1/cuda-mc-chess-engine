@@ -50,6 +50,7 @@ extern "C" void launch_random_playout(
     cudaStream_t stream
 ) {
     int blocks = (numBoards + BLOCK_SIZE - 1) / BLOCK_SIZE;
+    // <<< blocks, block_size, shared_memory, stream >>> 
     RandomPlayout<<<blocks, BLOCK_SIZE, 0, stream>>>(d_boards, d_results, numBoards, seed);
 }
 
@@ -85,6 +86,8 @@ extern "C" void launch_quiescence_playout(
     int blocks = (numBoards + BLOCK_SIZE - 1) / BLOCK_SIZE;
     QuiescencePlayout<<<blocks, BLOCK_SIZE, 0, stream>>>(d_boards, d_results, numBoards, seed, max_q_depth);
 }
+
+// Different to rest because of the hybrid approach - returns move and eval rather than just win probability
 extern "C" void launch_tactical_solver(
     const BoardState* d_positions,
     Move* d_best_moves,
