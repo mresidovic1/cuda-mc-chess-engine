@@ -8,7 +8,7 @@
 
 // External functions from CPU engine
 extern chess::Move find_best_move(chess::Board& board, int max_depth, int time_limit_ms);
-extern void attacks_init();  // May need to initialize attack tables
+extern uint64_t get_total_nodes_searched();
 
 // ============================================================================
 // CPU Engine Wrapper Implementation
@@ -55,9 +55,8 @@ public:
             // CPU engine doesn't directly expose eval, so we estimate
             result.eval_cp = 0;  // Would need to expose eval from search
             
-            // Note: CPU engine doesn't easily expose nodes count
-            // We'd need to modify it or track separately
-            result.nodes = 0;  // TODO: expose from engine
+            // Get total nodes searched
+            result.nodes = get_total_nodes_searched();
             result.depth_reached = params.max_depth;
             
         } catch (const std::exception& e) {
