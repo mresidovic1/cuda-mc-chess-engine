@@ -42,6 +42,7 @@ if(BUILD_CPU_BENCHMARKS)
     )
     target_link_libraries(benchmark_throughput PRIVATE OpenMP::OpenMP_CXX)
     target_compile_options(benchmark_throughput PRIVATE -O3 -march=native)
+    target_compile_definitions(benchmark_throughput PRIVATE UNIT_TESTS)
     
     # Fixed-time benchmark
     add_executable(benchmark_fixed_time
@@ -51,6 +52,7 @@ if(BUILD_CPU_BENCHMARKS)
     )
     target_link_libraries(benchmark_fixed_time PRIVATE OpenMP::OpenMP_CXX)
     target_compile_options(benchmark_fixed_time PRIVATE -O3 -march=native)
+    target_compile_definitions(benchmark_fixed_time PRIVATE UNIT_TESTS)
     
     # Stockfish comparison benchmark
     add_executable(benchmark_stockfish
@@ -60,6 +62,7 @@ if(BUILD_CPU_BENCHMARKS)
     )
     target_link_libraries(benchmark_stockfish PRIVATE OpenMP::OpenMP_CXX)
     target_compile_options(benchmark_stockfish PRIVATE -O3 -march=native)
+    target_compile_definitions(benchmark_stockfish PRIVATE UNIT_TESTS)
     
     # Head-to-head matches
     add_executable(benchmark_matches
@@ -69,6 +72,7 @@ if(BUILD_CPU_BENCHMARKS)
     )
     target_link_libraries(benchmark_matches PRIVATE OpenMP::OpenMP_CXX)
     target_compile_options(benchmark_matches PRIVATE -O3 -march=native)
+    target_compile_definitions(benchmark_matches PRIVATE UNIT_TESTS)
     
     message(STATUS "CPU benchmarks configured")
 endif()
@@ -114,7 +118,7 @@ if(BUILD_GPU_BENCHMARKS)
             ${GPU_ENGINE_SOURCES}
         )
         target_link_libraries(benchmark_throughput_gpu PRIVATE OpenMP::OpenMP_CXX)
-        target_compile_definitions(benchmark_throughput_gpu PRIVATE BUILD_GPU_ENGINE)
+        target_compile_definitions(benchmark_throughput_gpu PRIVATE BUILD_GPU_ENGINE UNIT_TESTS)
         target_compile_options(benchmark_throughput_gpu PRIVATE
             $<$<COMPILE_LANGUAGE:CXX>:-O3 -march=native>
             $<$<COMPILE_LANGUAGE:CUDA>:-O3>
@@ -132,7 +136,7 @@ if(BUILD_GPU_BENCHMARKS)
             ${GPU_ENGINE_SOURCES}
         )
         target_link_libraries(benchmark_fixed_time_gpu PRIVATE OpenMP::OpenMP_CXX)
-        target_compile_definitions(benchmark_fixed_time_gpu PRIVATE BUILD_GPU_ENGINE)
+        target_compile_definitions(benchmark_fixed_time_gpu PRIVATE BUILD_GPU_ENGINE UNIT_TESTS)
         target_compile_options(benchmark_fixed_time_gpu PRIVATE
             $<$<COMPILE_LANGUAGE:CXX>:-O3 -march=native>
             $<$<COMPILE_LANGUAGE:CUDA>:-O3>
@@ -150,7 +154,7 @@ if(BUILD_GPU_BENCHMARKS)
             ${GPU_ENGINE_SOURCES}
         )
         target_link_libraries(benchmark_stockfish_gpu PRIVATE OpenMP::OpenMP_CXX)
-        target_compile_definitions(benchmark_stockfish_gpu PRIVATE BUILD_GPU_ENGINE)
+        target_compile_definitions(benchmark_stockfish_gpu PRIVATE BUILD_GPU_ENGINE UNIT_TESTS)
         target_compile_options(benchmark_stockfish_gpu PRIVATE
             $<$<COMPILE_LANGUAGE:CXX>:-O3 -march=native>
             $<$<COMPILE_LANGUAGE:CUDA>:-O3>
@@ -168,7 +172,7 @@ if(BUILD_GPU_BENCHMARKS)
             ${GPU_ENGINE_SOURCES}
         )
         target_link_libraries(benchmark_matches_gpu PRIVATE OpenMP::OpenMP_CXX)
-        target_compile_definitions(benchmark_matches_gpu PRIVATE BUILD_GPU_ENGINE)
+        target_compile_definitions(benchmark_matches_gpu PRIVATE BUILD_GPU_ENGINE UNIT_TESTS)
         target_compile_options(benchmark_matches_gpu PRIVATE
             $<$<COMPILE_LANGUAGE:CXX>:-O3 -march=native>
             $<$<COMPILE_LANGUAGE:CUDA>:-O3>
