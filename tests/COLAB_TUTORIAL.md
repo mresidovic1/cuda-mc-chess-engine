@@ -177,47 +177,65 @@ drwxr-xr-x  3 root root   tests/
 ### Step 5: Build CPU Engine (Standalone Test)
 
 ```python
-# Create build directory for CPU tests
-!mkdir -p cpu/build
-%cd cpu/build
+# The CPU engine uses Meson build system
+# Install Meson if not available
+!pip install meson ninja
 
-# Configure with CMake (if you have CMakeLists.txt)
-# OR compile directly
-%cd ../..
-!g++ -O3 -march=native -fopenmp \
-    -I cpu/include \
-    cpu/src/chess_engine_parallelized.cpp \
-    cpu/tests/test_suite.cpp \
-    -o cpu_test \
-    -DUNIT_TESTS
+# Configure CPU engine build
+!meson setup cpu/build cpu --buildtype=release
+
+# Build CPU tests
+!meson compile -C cpu/build
 
 # Test CPU engine
+!./cpu/build/test_suite_parallel --mode=depth --depth=10 --level=easy | head -20
+```
+
+**Alternative: Manual compilation (if Meson fails):**
+
+```python
+# Compile directly with proper paths
+!g++ -O3 -march=native -fopenmp \
+    -I cpu/include \
+    -o cpu_test \
+    cpu/src/chess_engine_parallelized.cpp \
+    cpu/tests/test_suite.cpp \
+    -DUNIT_TESTS
+
+# Test
 !./cpu_test --mode=depth --depth=10 --level=easy | head -20
 ```
 
 ### Step 6: Build GPU Engine (Standalone Test)
 
 ```python
-# Build GPU engine
+# Navigate to GPU directory
 %cd gpu
 
 # Check for build script
-!ls build*.sh build*.bat 2>/dev/null || echo "No build script found"
+!ls build*.sh build*.bat 2>/dev/null || echo "Using manual build"
 
-# If build script exists:
-!chmod +x build_and_test.sh  # Make executable (if on Linux)
-!bash build_and_test.sh
+# If build script exists, use it:
+!chmod +x build_and_test.sh 2>/dev/null
+!bash build_and_test.sh 2>/dev/null || echo "Build script not available, using manual build"
 
-# OR compile manually:
+# Manual build (if script doesn't exist):
 !mkdir -p build
 %cd build
 
+# Detect GPU architecture
+import subprocess
+gpu_cap = subprocess.run(['nvidia-smi', '--query-gpu=compute_cap', '--format=csv,noheader'], 
+                        capture_output=True, text=True)
+arch = gpu_cap.stdout.strip().replace('.', '') if gpu_cap.returncode == 0 else "75"
+print(f"Using CUDA architecture: {arch}")
+
 # Configure with CMake
 !cmake .. \
-    -DCMAKE_CUDA_ARCHITECTURES="75;80;86;89" \
+    -DCMAKE_CUDA_ARCHITECTURES="{arch}" \
     -DCMAKE_BUILD_TYPE=Release
 
-# Compile
+# Compile (this may take 3-5 minutes)
 !make -j$(nproc)
 
 # Test GPU engine
@@ -244,18 +262,34 @@ if gpu_info:
 ### Step 7: Build Benchmark Framework
 
 ```python
-%cd tests
+# Navigate to tests directory
+%cd /content/cuda-mc-chess-engine/tests
 !mkdir -p build
 %cd build
 
+# Auto-detect GPU architecture
+import subprocess
+result = subprocess.run(['nvidia-smi', '--query-gpu=compute_cap', '--format=csv,noheader'],
+                       capture_output=True, text=True)
+if result.returncode == 0:
+    arch = result.stdout.strip().replace('.', '')
+    print(f"Detected GPU architecture: {arch}")
+else:
+    arch = "75"  # Default to T4
+    print(f"Using default architecture: {arch}")
+
 # Configure benchmarks with GPU support
-!cmake .. \
-    -DCMAKE_CUDA_ARCHITECTURES="75" \
+cmake_cmd = f"""cmake .. \
+    -DCMAKE_CUDA_ARCHITECTURES="{arch}" \
     -DBUILD_GPU_BENCHMARKS=ON \
     -DBUILD_CPU_BENCHMARKS=ON \
-    -DCMAKE_BUILD_TYPE=Release
+    -DCMAKE_BUILD_TYPE=Release"""
 
-# Compile (this may take 2-5 minutes)
+print(f"Running: {cmake_cmd}")
+!{cmake_cmd}
+
+# Compile (this may take 5-10 minutes)
+# Use VERBOSE=1 to see detailed compilation steps
 !make -j$(nproc) VERBOSE=1
 ```
 
