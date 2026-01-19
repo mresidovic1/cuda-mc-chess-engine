@@ -32,10 +32,10 @@ struct SearchParams {
 };
 
 // ============================================================================
-// Search Result
+// Benchmark Search Result (renamed to avoid conflict with GPU SearchResult)
 // ============================================================================
 
-struct SearchResult {
+struct BenchmarkSearchResult {
     std::string move_uci;        // Move in UCI notation (e.g., "e2e4")
     int eval_cp = 0;             // Evaluation in centipawns
     uint64_t nodes = 0;          // CPU: nodes searched
@@ -59,7 +59,7 @@ public:
     virtual ~EngineInterface() = default;
     
     // Search for best move
-    virtual SearchResult search(const std::string& fen, SearchParams params) = 0;
+    virtual BenchmarkSearchResult search(const std::string& fen, SearchParams params) = 0;
     
     // Reset engine state (clear hash tables, etc.)
     virtual void reset() = 0;

@@ -225,7 +225,7 @@ void test_position_stockfish(EngineInterface& engine,
     params.use_time_limit = true;
     params.time_limit_ms = config.engine_time_ms;
     
-    SearchResult eng_result = engine.search(pos.fen, params);
+    BenchmarkSearchResult eng_result = engine.search(pos.fen, params);
     
     // Compare
     bool match = moves_match(sf_result.best_move, eng_result.move_uci);

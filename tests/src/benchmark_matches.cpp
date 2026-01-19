@@ -226,7 +226,7 @@ GameStats play_game(EngineInterface& white_engine,
         EngineInterface& current_engine = white_to_move ? white_engine : black_engine;
         
         // Get move
-        SearchResult search_result = current_engine.search(game.get_fen(), params);
+        BenchmarkSearchResult search_result = current_engine.search(game.get_fen(), params);
         
         if (search_result.move_uci == "(none)" || search_result.move_uci.empty()) {
             // No legal moves - checkmate or stalemate

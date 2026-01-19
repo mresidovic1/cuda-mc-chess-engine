@@ -124,7 +124,7 @@ QualityResult test_position_timed(EngineInterface& engine, const TestPosition& p
         std::cout.flush();
     }
     
-    SearchResult result = engine.search(pos.fen, params);
+    BenchmarkSearchResult result = engine.search(pos.fen, params);
     
     QualityResult quality;
     quality.move = result.move_uci;

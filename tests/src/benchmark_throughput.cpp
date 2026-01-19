@@ -102,7 +102,7 @@ void test_position(EngineInterface& engine, const TestPosition& pos,
         std::cout << "  Testing " << pos.name << " with " << engine.get_name() << "...\n";
     }
     
-    SearchResult result = engine.search(pos.fen, params);
+    BenchmarkSearchResult result = engine.search(pos.fen, params);
     
     uint64_t operations = result.nodes + result.simulations;
     double throughput = (result.time_ms > 0) ? (operations * 1000.0 / result.time_ms) : 0;

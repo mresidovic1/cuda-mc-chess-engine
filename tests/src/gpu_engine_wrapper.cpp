@@ -10,9 +10,6 @@
 #include <chrono>
 #include <iostream>
 
-// Avoid ambiguity with SearchResult from search_config.h
-using BenchmarkSearchResult = SearchResult;
-
 // External initialization functions
 extern void init_attack_tables();
 
@@ -50,7 +47,7 @@ public:
         }
     }
     
-    SearchResult search(const std::string& fen, SearchParams params) override {
+    BenchmarkSearchResult search(const std::string& fen, SearchParams params) override {
         BenchmarkSearchResult result;
         
         if (!gpu_available_) {

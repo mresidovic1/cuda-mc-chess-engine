@@ -25,8 +25,8 @@ public:
         }
     }
     
-    SearchResult search(const std::string& fen, SearchParams params) override {
-        SearchResult result;
+    BenchmarkSearchResult search(const std::string& fen, SearchParams params) override {
+        BenchmarkSearchResult result;
         
         try {
             // Parse FEN into chess::Board
