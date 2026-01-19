@@ -154,43 +154,7 @@ __global__ void StaticEval(
 // QUIESCENCE PLAYOUT - Tactical extension for horizon effect
 // ============================================================================
 
-// Check if a move is tactical (capture, check, or promotion)
-__device__ __forceinline__
-bool is_tactical_move(const BoardState* pos, Move m) {
-    int move_type = (m >> 12) & 0xF;
-
-    // Promotions are always tactical
-    if (move_type >= MOVE_PROMO_N && move_type <= MOVE_PROMO_CAP_Q) {
-        return true;
-    }
-
-    // Captures are tactical
-    if (move_type == MOVE_CAPTURE || move_type == MOVE_EP_CAPTURE) {
-        return true;
-    }
-
-    // TODO: Add lightweight check detection
-
-    return false;
-}
-
-// Generate only tactical moves (captures and promotions)
-__device__ __forceinline__
-int generate_tactical_moves(const BoardState* pos, Move* moves) {
-    // Generate all legal moves first
-    Move all_moves[MAX_MOVES];
-    int total = generate_legal_moves(pos, all_moves);
-
-    // Filter for tactical moves only
-    int count = 0;
-    for (int i = 0; i < total; i++) {
-        if (is_tactical_move(pos, all_moves[i])) {
-            moves[count++] = all_moves[i];
-        }
-    }
-
-    return count;
-}
+// Inline helper functions (is_tactical_move, generate_tactical_moves) now in playouts.cuh
 
 // MVV-LVA (Most Valuable Victim - Least Valuable Attacker) for move ordering
 __device__
