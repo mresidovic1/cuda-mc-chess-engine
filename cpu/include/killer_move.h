@@ -1,4 +1,4 @@
-#include "include/chess.hpp"
+#include "chess.hpp"
 
 using namespace chess;
 // Games usually do not go over 20-30 plies
