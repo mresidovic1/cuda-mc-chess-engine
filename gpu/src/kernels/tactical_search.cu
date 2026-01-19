@@ -10,11 +10,42 @@
 // TACTICAL OPTIMIZATIONS - Pruning, Enhanced Move Ordering
 
 // Check if move gives check
-__device__ __forceinline__
+__device__
 bool gives_check_simple(BoardState* pos, Move m) {
     BoardState temp = *pos;
     make_move(&temp, m);
     return in_check(&temp);
+}
+
+// ============================================================================
+// TACTICAL MOVE ORDERING - Enhanced with SEE
+// ============================================================================
+
+__device__
+int tactical_move_score(const BoardState* pos, Move m, bool gives_check) {
+    int move_type = (m >> 12) & 0xF;
+
+    // Checks - highest priority
+    if (gives_check) return 1000000;
+
+    // Promotion captures - use SEE
+    if (move_type >= MOVE_PROMO_CAP_N && move_type <= MOVE_PROMO_CAP_Q) {
+        int see = see_capture(pos, m);
+        return 100000 + see;
+    }
+
+    // Promotions (non-capture)
+    if (move_type >= MOVE_PROMO_N && move_type <= MOVE_PROMO_Q) {
+        return 50000 + ((move_type - MOVE_PROMO_N) * 1000);
+    }
+
+    // Captures - SEE + MVV-LVA
+    if (move_type == MOVE_CAPTURE || move_type == MOVE_EP_CAPTURE) {
+        int see = see_capture(pos, m);
+        return 10000 + see * 10 + mvv_lva_score(pos, m);
+    }
+
+    return 0;  // Quiet moves
 }
 
 // ============================================================================
