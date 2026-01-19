@@ -94,8 +94,9 @@ if(BUILD_GPU_BENCHMARKS)
         set(CMAKE_CUDA_STANDARD 17)
         set(CMAKE_CUDA_STANDARD_REQUIRED ON)
         
-        # Include GPU headers
+        # Include GPU headers and CUDA toolkit
         include_directories(${CMAKE_CURRENT_SOURCE_DIR}/../gpu/include)
+        include_directories(${CMAKE_CUDA_TOOLKIT_INCLUDE_DIRECTORIES})
         
         # GPU engine sources
         set(GPU_ENGINE_SOURCES
