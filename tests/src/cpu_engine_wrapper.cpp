@@ -89,3 +89,10 @@ public:
 std::unique_ptr<EngineInterface> create_cpu_engine() {
     return std::make_unique<CPUEngineImpl>();
 }
+
+// Stub for GPU engine when not built with GPU support
+#ifndef BUILD_GPU_ENGINE
+std::unique_ptr<EngineInterface> create_gpu_engine() {
+    return nullptr;  // GPU not available in CPU-only build
+}
+#endif
