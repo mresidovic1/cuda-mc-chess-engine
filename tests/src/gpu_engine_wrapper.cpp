@@ -10,6 +10,9 @@
 #include <chrono>
 #include <iostream>
 
+// Avoid ambiguity with SearchResult from search_config.h
+using BenchmarkSearchResult = SearchResult;
+
 // External initialization functions
 extern void init_attack_tables();
 
@@ -19,7 +22,7 @@ extern void init_attack_tables();
 
 class GPUEngineImpl : public EngineInterface {
 public:
-    GPUEngineImpl() {
+    GPUEngineImpl() : current_simulations_(10000) {
         // Initialize attack tables if needed
         static bool initialized = false;
         if (!initialized) {
@@ -28,12 +31,12 @@ public:
         }
         
         // Create PUCT engine with default config
-        SearchConfig config;
+        PUCTConfig config;
         config.num_simulations = 10000;
         config.batch_size = 256;
-        config.use_gpu = true;
         config.use_virtual_loss = true;
         config.add_dirichlet_noise = false;  // Deterministic for benchmarking
+        config.verbose = false;
         
         engine_ = std::make_unique<PUCTEngine>(config);
         
@@ -48,7 +51,7 @@ public:
     }
     
     SearchResult search(const std::string& fen, SearchParams params) override {
-        SearchResult result;
+        BenchmarkSearchResult result;
         
         if (!gpu_available_) {
             std::cerr << "GPU not available\n";
@@ -62,14 +65,23 @@ public:
             FENError error = FENParser::parse(fen, board);
             
             if (error != FENError::OK) {
-                std::cerr << "FEN parse error: " << FENErrorToString(error) << "\n";
+                std::cerr << "FEN parse error: " << static_cast<int>(error) << "\n";
                 result.move_uci = "(none)";
                 return result;
             }
             
-            // Configure search
-            if (params.max_simulations > 0) {
-                engine_->set_simulation_count(params.max_simulations);
+            // Update simulation count if specified
+            if (params.max_simulations > 0 && params.max_simulations != current_simulations_) {
+                current_simulations_ = params.max_simulations;
+                // Recreate engine with new config
+                PUCTConfig config;
+                config.num_simulations = current_simulations_;
+                config.batch_size = 256;
+                config.use_virtual_loss = true;
+                config.add_dirichlet_noise = false;
+                config.verbose = false;
+                engine_ = std::make_unique<PUCTEngine>(config);
+                engine_->init();
             }
             
             // Start timer
@@ -100,16 +112,16 @@ public:
                 
                 result.move_uci = std::string(from_sq) + std::string(to_sq);
                 
-                // Add promotion piece if applicable
-                if (flags >= MOVE_PROMO_N) {
+                // Add promotion piece if applicable (flags >= 8 means promotion)
+                if (flags >= 8) {
                     const char promo[] = "nbrq";
-                    result.move_uci += promo[flags & 0x3];
+                    result.move_uci += promo[(flags - 8) & 0x3];
                 }
             }
             
             // Get statistics
-            result.simulations = engine_->get_simulation_count();
-            result.eval_cp = static_cast<int>(engine_->get_root_eval() * 100);  // Convert to centipawns
+            result.simulations = engine_->get_total_visits();
+            result.eval_cp = static_cast<int>(engine_->get_root_value() * 100);  // Convert to centipawns
             
         } catch (const std::exception& e) {
             std::cerr << "GPU search error: " << e.what() << "\n";
@@ -139,6 +151,7 @@ public:
 private:
     std::unique_ptr<PUCTEngine> engine_;
     bool gpu_available_;
+    int current_simulations_;
 };
 
 // ============================================================================
