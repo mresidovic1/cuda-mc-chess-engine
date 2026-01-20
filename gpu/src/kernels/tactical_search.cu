@@ -10,7 +10,7 @@
 // TACTICAL OPTIMIZATIONS - Pruning, Enhanced Move Ordering
 
 // Check if move gives check
-__device__ __forceinline__
+__device__
 bool gives_check_simple(BoardState* pos, Move m) {
     BoardState temp = *pos;
     make_move(&temp, m);
@@ -21,7 +21,7 @@ bool gives_check_simple(BoardState* pos, Move m) {
 // TACTICAL MOVE ORDERING - Enhanced with SEE
 // ============================================================================
 
-__device__ __forceinline__
+__device__
 int tactical_move_score(const BoardState* pos, Move m, bool gives_check) {
     int move_type = (m >> 12) & 0xF;
 

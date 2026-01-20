@@ -237,24 +237,33 @@ struct PUCTNode {
     // Update node statistics
     void update(float value) {
         visits.fetch_add(1, std::memory_order_relaxed);
-        total_value.fetch_add(value, std::memory_order_relaxed);
+        // C++17 compatible: use load/store loop for atomic float
+        float old_val = total_value.load(std::memory_order_relaxed);
+        while (!total_value.compare_exchange_weak(old_val, old_val + value, 
+                                                   std::memory_order_relaxed)) {}
     }
 
     // Update AMAF statistics
     void update_amaf(float value) {
         amaf_visits.fetch_add(1, std::memory_order_relaxed);
-        amaf_value.fetch_add(value, std::memory_order_relaxed);
+        float old_val = amaf_value.load(std::memory_order_relaxed);
+        while (!amaf_value.compare_exchange_weak(old_val, old_val + value,
+                                                  std::memory_order_relaxed)) {}
     }
 
     // Virtual loss for parallel MCTS
     void add_virtual_loss(float loss) {
         visits.fetch_add(1, std::memory_order_relaxed);
-        total_value.fetch_sub(loss, std::memory_order_relaxed);
+        float old_val = total_value.load(std::memory_order_relaxed);
+        while (!total_value.compare_exchange_weak(old_val, old_val - loss,
+                                                   std::memory_order_relaxed)) {}
     }
 
     void remove_virtual_loss(float loss) {
         visits.fetch_sub(1, std::memory_order_relaxed);
-        total_value.fetch_add(loss, std::memory_order_relaxed);
+        float old_val = total_value.load(std::memory_order_relaxed);
+        while (!total_value.compare_exchange_weak(old_val, old_val + loss,
+                                                   std::memory_order_relaxed)) {}
     }
 
     // Check if fully expanded
