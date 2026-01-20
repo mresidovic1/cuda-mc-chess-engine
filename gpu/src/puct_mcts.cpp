@@ -303,7 +303,7 @@ Move PUCTEngine::search(const BoardState& root_state) {
     return best_move;
 }
 
-// SELECTION PHASE (PUCT)
+// Selection phase 
 
 PUCTNode* PUCTEngine::select(PUCTNode* node) {
     while (true) {
@@ -316,7 +316,6 @@ PUCTNode* PUCTEngine::select(PUCTNode* node) {
         }
         
         if (!node->is_fully_expanded()) {
-            // Thread-safe expansion
             std::lock_guard<std::mutex> lock(node->expansion_mutex);
             
             if (!node->is_fully_expanded() && !node->is_terminal) {
@@ -331,13 +330,12 @@ PUCTNode* PUCTEngine::select(PUCTNode* node) {
                     auto child = std::make_unique<PUCTNode>(child_state, move, node, prior);
                     PUCTNode* child_ptr = child.get();
                     
-                    // IMMEDIATE CHECKMATE DETECTION - critical for mate-in-1!
                     Move temp_moves[MAX_MOVES];
                     int num_child_moves = cpu_movegen::generate_legal_moves_cpu(&child_state, temp_moves);
                     if (num_child_moves == 0 && cpu_movegen::in_check_cpu(&child_state)) {
-                        // Opponent has no legal moves and is in check = CHECKMATE!
+                        // Opponent has no legal moves and is in check = checkmate
                         child_ptr->is_terminal = true;
-                        child_ptr->value_estimate = 1.0f;  // WIN for the player who made this move!
+                        child_ptr->value_estimate = 1.0f;  
                         child_ptr->evaluated = true;
                         child_ptr->moves_generated = true;
                     }
@@ -364,7 +362,7 @@ PUCTNode* PUCTEngine::best_child_puct(PUCTNode* node) {
     float c_puct = config.use_dynamic_cpuct ? get_dynamic_cpuct() : config.c_puct;
     int parent_visits = node->visits.load(std::memory_order_relaxed);
 
-    // FPU: First Play Urgency
+    // FPU - first play urgency
     float fpu_value = config.use_fpu ? (node->Q() - config.fpu_reduction) : 0.0f;
 
     PUCTNode* best_child = nullptr;
