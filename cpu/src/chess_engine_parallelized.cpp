@@ -44,6 +44,9 @@ int g_time_limit_ms = 0;
 // --- THREAD LOCAL STORAGE ---
 std::vector<ThreadLocalData> tld_store;
 
+// --- NODE COUNTING FOR BENCHMARKS ---
+uint64_t g_last_search_nodes = 0;
+
 // --- EVALUATION ---
 int evaluate(const Board &board) {
     int evaluation = 0;
@@ -735,7 +738,18 @@ Move find_best_move(Board& board, int max_depth, int time_limit_ms = 0) {
         }
     }
 
+    // Store total nodes for external access
+    g_last_search_nodes = 0;
+    for (const auto& tld : tld_store) {
+        g_last_search_nodes += tld.nodes_searched;
+    }
+
     return best_move_overall;
+}
+
+// Get total nodes searched across all threads
+uint64_t get_total_nodes_searched() {
+    return g_last_search_nodes;
 }
 
 std::string run_engine(Board& board, int depth = 20) {

@@ -1,4 +1,5 @@
 #include "../../include/chess_types.cuh"
+#include "../../include/kernels/movegen.cuh"
 
 // Constants for MCTS
 #define MAX_PLAYOUT_MOVES 500  
@@ -22,80 +23,7 @@ __constant__ Bitboard g_BISHOP_MASKS[64];
 __device__ Bitboard g_ROOK_ATTACKS[64][1 << ROOK_MAGIC_BITS];
 __device__ Bitboard g_BISHOP_ATTACKS[64][1 << BISHOP_MAGIC_BITS];
 
-// Direction shifts
-
-__device__ __forceinline__
-Bitboard shift_north(Bitboard b) { return b << 8; }
-
-__device__ __forceinline__
-Bitboard shift_south(Bitboard b) { return b >> 8; }
-
-__device__ __forceinline__
-Bitboard shift_east(Bitboard b) { return (b << 1) & ~FILE_A; }
-
-__device__ __forceinline__
-Bitboard shift_west(Bitboard b) { return (b >> 1) & ~FILE_H; }
-
-__device__ __forceinline__
-Bitboard shift_ne(Bitboard b) { return (b << 9) & ~FILE_A; }
-
-__device__ __forceinline__
-Bitboard shift_nw(Bitboard b) { return (b << 7) & ~FILE_H; }
-
-__device__ __forceinline__
-Bitboard shift_se(Bitboard b) { return (b >> 7) & ~FILE_A; }
-
-__device__ __forceinline__
-Bitboard shift_sw(Bitboard b) { return (b >> 9) & ~FILE_H; }
-
-__device__ __forceinline__
-Bitboard rook_attacks(Square sq, Bitboard occ) {
-    occ &= g_ROOK_MASKS[sq];
-    occ *= g_ROOK_MAGICS[sq];
-    occ >>= (64 - ROOK_MAGIC_BITS);
-    return g_ROOK_ATTACKS[sq][occ];
-}
-
-__device__ __forceinline__
-Bitboard bishop_attacks(Square sq, Bitboard occ) {
-    // And-anje da dobijemo blockere
-    occ &= g_BISHOP_MASKS[sq];
-    // Magic dio iz gore linka, kompresija svih bitova u jedan broj
-    occ *= g_BISHOP_MAGICS[sq];
-    // Shift da dobijemo odgovarajuce bitove
-    occ >>= (64 - BISHOP_MAGIC_BITS);
-    // Da dobijemo odgovarajuce poteze iz hard-codanih maski
-    return g_BISHOP_ATTACKS[sq][occ];
-}
-
-__device__ __forceinline__
-Bitboard queen_attacks(Square sq, Bitboard occ) {
-    return rook_attacks(sq, occ) | bishop_attacks(sq, occ);
-}
-
-// Attack detection
-
-__device__ __forceinline__
-bool is_attacked(const BoardState* pos, Square sq, int by_color) {
-    Bitboard occ = pos->occupied();
-    // Provjera da li pjesak napada neko mjesto tako sto provjeravamo da li crni napada njega - obrnuta logika
-    // Slicno za kralja i skakaca
-    // Topovi i lovci prvo generisu maske napada sa blokerima i onda provjera enemy piecova
-    Bitboard attackers =
-        (g_PAWN_ATTACKS[by_color ^ 1][sq] & pos->pieces[by_color][PAWN]) |
-        (g_KNIGHT_ATTACKS[sq] & pos->pieces[by_color][KNIGHT]) |
-        (g_KING_ATTACKS[sq] & pos->pieces[by_color][KING]) |
-        (rook_attacks(sq, occ) & (pos->pieces[by_color][ROOK] | pos->pieces[by_color][QUEEN])) |
-        (bishop_attacks(sq, occ) & (pos->pieces[by_color][BISHOP] | pos->pieces[by_color][QUEEN]));
-    return attackers != 0;
-}
-
-__device__
-bool in_check(const BoardState* pos) {
-    // Find king -> check if king attacked
-    Square king_sq = lsb(pos->pieces[pos->side_to_move][KING]);
-    return is_attacked(pos, king_sq, pos->side_to_move ^ 1);
-}
+// Inline functions are now in movegen.cuh header
 
 // Table initialization functions for symbol access (called from init_tables.cu)
 

@@ -1,6 +1,6 @@
 #pragma once
 
-#include "include/chess.hpp"
+#include "chess.hpp"
 #include <array>
 
 namespace chess_engine {

@@ -3,7 +3,7 @@
 
 #include <vector>
 #include <cstring>
-#include "include/chess.hpp"
+#include "chess.hpp"
 
 struct TTEntryParallel {
     uint64_t key;

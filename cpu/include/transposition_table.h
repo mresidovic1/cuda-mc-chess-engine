@@ -1,5 +1,5 @@
 #include <vector>
-#include "include/chess.hpp"
+#include "chess.hpp"
 
 // 2^23 (23 bytes = uint64(8) + int(4) + int(4) + uint8(1) + Move - uint16(2) + int(4))
 const int TT_SIZE = 8388608;

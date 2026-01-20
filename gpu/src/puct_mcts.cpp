@@ -1,23 +1,12 @@
 // https://www.chessprogramming.org/Monte-Carlo_Tree_Search
 
 #include "../include/puct_mcts.h"
+#include "../include/kernel_launchers.h"
 #include <algorithm>
 #include <iostream>
 #include <cmath>
 #include <cassert>
 #include <cstring>
-
-// External GPU playout launchers
-// extern "C" void launch_quiescence_playout(
-//     const BoardState* d_boards,
-//     float* d_results,
-//     int numBoards,
-//     unsigned int seed,
-//     int max_q_depth,
-//     cudaStream_t stream
-// );
-
-// extern "C" void launch_eval_playout(
 //     const BoardState* d_boards,
 //     float* d_results,
 //     int numBoards,
