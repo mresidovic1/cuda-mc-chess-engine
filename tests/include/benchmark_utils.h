@@ -12,9 +12,6 @@
 #include <vector>
 #include <algorithm>
 
-// ============================================================================
-// High-Precision Timer
-// ============================================================================
 
 class Timer {
 public:
@@ -37,9 +34,6 @@ private:
     std::chrono::high_resolution_clock::time_point start_;
 };
 
-// ============================================================================
-// Progress Reporter
-// ============================================================================
 
 class ProgressReporter {
 public:
@@ -86,9 +80,6 @@ private:
     }
 };
 
-// ============================================================================
-// Statistics Calculator
-// ============================================================================
 
 class Statistics {
 public:
@@ -156,9 +147,6 @@ private:
     std::vector<double> values_;
 };
 
-// ============================================================================
-// Elo Rating Calculator
-// ============================================================================
 
 class EloCalculator {
 public:
@@ -183,8 +171,8 @@ public:
         
         // 95% confidence interval (normal approximation)
         double p = score;
-        double stderr = std::sqrt(p * (1 - p) / total);
-        double margin = 1.96 * stderr;  // 95% CI
+        double std_err = std::sqrt(p * (1 - p) / total);
+        double margin = 1.96 * std_err;  // 95% CI
         
         double lower_score = std::max(0.001, p - margin);
         double upper_score = std::min(0.999, p + margin);
@@ -225,9 +213,6 @@ public:
     }
 };
 
-// ============================================================================
-// Formatting Helpers
-// ============================================================================
 
 inline std::string format_throughput(double throughput) {
     if (throughput >= 1e6) {

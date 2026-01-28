@@ -13,9 +13,6 @@
 #include <sstream>
 #include <array>
 
-// ============================================================================
-// Configuration
-// ============================================================================
 
 struct StockfishConfig {
     std::string output_file = "results_stockfish_agreement.csv";
@@ -29,9 +26,6 @@ struct StockfishConfig {
     bool verbose = false;
 };
 
-// ============================================================================
-// Parse Command Line Arguments
-// ============================================================================
 
 StockfishConfig parse_args(int argc, char** argv) {
     StockfishConfig config;
@@ -88,9 +82,6 @@ StockfishConfig parse_args(int argc, char** argv) {
     return config;
 }
 
-// ============================================================================
-// Stockfish Interface
-// ============================================================================
 
 struct StockfishResult {
     std::string best_move;
@@ -175,9 +166,6 @@ StockfishResult query_stockfish_proper(const std::string& stockfish_path,
     return result;
 }
 
-// ============================================================================
-// Compare Moves
-// ============================================================================
 
 bool moves_match(const std::string& move1, const std::string& move2) {
     // Simple string comparison (case-insensitive)
@@ -192,9 +180,6 @@ bool moves_match(const std::string& move1, const std::string& move2) {
     return true;
 }
 
-// ============================================================================
-// Test Single Position
-// ============================================================================
 
 void test_position_stockfish(EngineInterface& engine,
                              const TestPosition& pos,
@@ -250,9 +235,6 @@ void test_position_stockfish(EngineInterface& engine,
     );
 }
 
-// ============================================================================
-// Main Benchmark
-// ============================================================================
 
 int main(int argc, char** argv) {
     StockfishConfig config = parse_args(argc, argv);

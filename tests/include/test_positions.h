@@ -7,9 +7,6 @@
 #include <string>
 #include <vector>
 
-// ============================================================================
-// Test Position Structure
-// ============================================================================
 
 struct TestPosition {
     std::string name;
@@ -19,10 +16,6 @@ struct TestPosition {
     std::string category;   // "tactical", "endgame", "positional", etc.
 };
 
-// ============================================================================
-// Bratko-Kopec Test Suite (24 positions)
-// Classic engine testing positions
-// ============================================================================
 
 inline std::vector<TestPosition> get_bratko_kopec_suite() {
     return {
@@ -53,9 +46,6 @@ inline std::vector<TestPosition> get_bratko_kopec_suite() {
     };
 }
 
-// ============================================================================
-// Win At Chess (WAC) - Selected positions
-// ============================================================================
 
 inline std::vector<TestPosition> get_wac_suite() {
     return {
@@ -67,10 +57,6 @@ inline std::vector<TestPosition> get_wac_suite() {
     };
 }
 
-// ============================================================================
-// Performance Testing Positions
-// Varied complexity for throughput benchmarks
-// ============================================================================
 
 inline std::vector<TestPosition> get_performance_suite() {
     return {
@@ -92,9 +78,6 @@ inline std::vector<TestPosition> get_performance_suite() {
     };
 }
 
-// ============================================================================
-// All Positions Combined
-// ============================================================================
 
 inline std::vector<TestPosition> get_all_positions() {
     auto all = get_bratko_kopec_suite();
@@ -107,9 +90,6 @@ inline std::vector<TestPosition> get_all_positions() {
     return all;
 }
 
-// ============================================================================
-// Filter by difficulty
-// ============================================================================
 
 inline std::vector<TestPosition> filter_by_difficulty(const std::vector<TestPosition>& positions, 
                                                        const std::string& difficulty) {

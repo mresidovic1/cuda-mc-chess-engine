@@ -17,9 +17,6 @@ namespace chess {
 struct BoardState;
 typedef uint16_t Move;
 
-// ============================================================================
-// Search Parameters
-// ============================================================================
 
 struct SearchParams {
     int max_depth = 20;          // CPU: max search depth
@@ -31,9 +28,6 @@ struct SearchParams {
     bool verbose = false;
 };
 
-// ============================================================================
-// Benchmark Search Result (renamed to avoid conflict with GPU SearchResult)
-// ============================================================================
 
 struct BenchmarkSearchResult {
     std::string move_uci;        // Move in UCI notation (e.g., "e2e4")
@@ -50,9 +44,6 @@ struct BenchmarkSearchResult {
     }
 };
 
-// ============================================================================
-// Abstract Engine Interface
-// ============================================================================
 
 class EngineInterface {
 public:
@@ -77,9 +68,6 @@ public:
     virtual bool is_available() const { return true; }
 };
 
-// ============================================================================
-// Factory Functions
-// ============================================================================
 
 // Create CPU engine wrapper
 std::unique_ptr<EngineInterface> create_cpu_engine();

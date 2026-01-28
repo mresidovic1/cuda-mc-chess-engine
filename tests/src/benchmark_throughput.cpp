@@ -11,9 +11,6 @@
 #include <string>
 #include <cstring>
 
-// ============================================================================
-// Configuration
-// ============================================================================
 
 struct BenchmarkConfig {
     std::string output_file = "results_throughput.csv";
@@ -26,9 +23,6 @@ struct BenchmarkConfig {
     bool verbose = false;
 };
 
-// ============================================================================
-// Parse Command Line Arguments
-// ============================================================================
 
 BenchmarkConfig parse_args(int argc, char** argv) {
     BenchmarkConfig config;
@@ -81,9 +75,6 @@ BenchmarkConfig parse_args(int argc, char** argv) {
     return config;
 }
 
-// ============================================================================
-// Run Throughput Test on Single Position
-// ============================================================================
 
 void test_position(EngineInterface& engine, const TestPosition& pos,
                   const BenchmarkConfig& config, ThroughputCSV& csv) {
@@ -123,9 +114,6 @@ void test_position(EngineInterface& engine, const TestPosition& pos,
     }
 }
 
-// ============================================================================
-// Main Benchmark
-// ============================================================================
 
 int main(int argc, char** argv) {
     BenchmarkConfig config = parse_args(argc, argv);

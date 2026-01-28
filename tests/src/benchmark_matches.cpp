@@ -11,9 +11,6 @@
 #include <string>
 #include <random>
 
-// ============================================================================
-// Configuration
-// ============================================================================
 
 struct MatchConfig {
     std::string output_file = "results_matches.csv";
@@ -25,9 +22,6 @@ struct MatchConfig {
     bool verbose = false;
 };
 
-// ============================================================================
-// Parse Command Line Arguments
-// ============================================================================
 
 MatchConfig parse_args(int argc, char** argv) {
     MatchConfig config;
@@ -74,9 +68,6 @@ MatchConfig parse_args(int argc, char** argv) {
     return config;
 }
 
-// ============================================================================
-// Game State
-// ============================================================================
 
 enum class GameResult {
     ONGOING,
@@ -115,9 +106,6 @@ std::string termination_reason(GameResult result) {
     }
 }
 
-// ============================================================================
-// Simplified Game Manager
-// ============================================================================
 
 class GameManager {
 public:
@@ -184,9 +172,6 @@ private:
     std::vector<std::string> position_history_;
 };
 
-// ============================================================================
-// Play Single Game
-// ============================================================================
 
 struct GameStats {
     GameResult result;
@@ -256,9 +241,6 @@ GameStats play_game(EngineInterface& white_engine,
     return stats;
 }
 
-// ============================================================================
-// Main Benchmark
-// ============================================================================
 
 int main(int argc, char** argv) {
     MatchConfig config = parse_args(argc, argv);

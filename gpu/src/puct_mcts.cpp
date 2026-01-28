@@ -2,24 +2,28 @@
 
 #include "../include/puct_mcts.h"
 #include "../include/kernel_launchers.h"
+#include "../include/evaluation.h"
 #include <algorithm>
 #include <iostream>
 #include <cmath>
 #include <cassert>
 #include <cstring>
-//     const BoardState* d_boards,
-//     float* d_results,
-//     int numBoards,
-//     unsigned int seed,
-//     cudaStream_t stream
-// );
+#include <chrono>
+#include <limits>
 
-// extern "C" void launch_static_eval(
-//     const BoardState* d_boards,
-//     float* d_results,
-//     int numBoards,
-//     cudaStream_t stream
-// );
+    const BoardState* d_boards,
+    float* d_results,
+    int numBoards,
+    unsigned int seed,
+    cudaStream_t stream
+);
+
+extern "C" void launch_static_eval(
+    const BoardState* d_boards,
+    float* d_results,
+    int numBoards,
+    cudaStream_t stream
+);
 
 #include "../include/cpu_movegen.h"
 
@@ -41,6 +45,7 @@ int MoveHeuristics::piece_square_value(int piece, int square, int color) {
     return PST_BONUS[piece] * rank / 7;
 }
 
+// MVV-LVA (Most Valuable Victim - Least Valuable Attacker) for move ordering
 int MoveHeuristics::mvv_lva_score(Move move, const BoardState& state) {
     static const int piece_values[6] = {100, 320, 330, 500, 900, 20000};
     
@@ -77,16 +82,6 @@ int MoveHeuristics::mvv_lva_score(Move move, const BoardState& state) {
 int MoveHeuristics::see_score(Move move, const BoardState& state) {
     // Simplified SEE - MVV-LVA currently -> will be expanded
     return mvv_lva_score(move, state);
-}
-
-bool MoveHeuristics::is_killer_move(Move move, int ply) {
-    // Todo - will be implemented
-    return false;
-}
-
-int MoveHeuristics::history_score(Move move, int color) {
-    // Todo - will be implemented
-    return 0;  // Placeholder
 }
 
 bool MoveHeuristics::is_check(Move move, const BoardState& state) {
@@ -159,9 +154,16 @@ PUCTEngine::PUCTEngine(const PUCTConfig& cfg)
     , rng(std::chrono::steady_clock::now().time_since_epoch().count()) // Randomness
     , total_simulations(0)
 {
-    // Will be implemented
-    killer_moves.clear(); 
+    killer_moves.clear();
     history_table.clear();
+    continuation_history.clear();
+    stability_tracker.reset();
+    aspiration_window.reset(config.aspiration_initial_window);
+
+    // Initialize temperature schedule from config
+    temp_schedule.initial_temp = config.temperature_initial;
+    temp_schedule.final_temp = config.temperature_final;
+    temp_schedule.warmup_sims = config.temperature_warmup_sims;
 }
 
 PUCTEngine::~PUCTEngine() {
@@ -188,31 +190,51 @@ Move PUCTEngine::search(const BoardState& root_state) {
     // Create root node
     root = std::make_unique<PUCTNode>(root_state);
     total_simulations = 0;
-    
+
+    // Reset stability tracker
+    stability_tracker.reset();
+
     // Generate legal moves
     generate_legal_moves(root.get());
-    
+
     if (root->legal_moves.empty()) {
         return 0;  // No legal moves
     }
-    
+
     if (root->legal_moves.size() == 1) {
         return root->legal_moves[0];  // Forced move
     }
-    
+
     // Compute heuristic priors for root moves
     compute_move_priors(root.get());
-    
-    // Add Dirichlet noise for exploration -- alpha zerp radi - ne znam zasto -- previse matematike trenutno 
+
+    // Add Dirichlet noise for exploration -- alpha zerp radi - ne znam zasto -- previse matematike trenutno
     if (config.add_dirichlet_noise) {
         add_dirichlet_noise_to_root();
     }
-    
+
+    // Start timer for time-based search
+    auto search_start = std::chrono::steady_clock::now();
+    bool use_time = config.use_time_limit && config.time_limit_ms > 0;
+
     // Main MCTS loop
     int simulations_done = 0;
-    
-    while (simulations_done < config.num_simulations) {
-        int batch_size = std::min(config.batch_size, config.num_simulations - simulations_done);
+    int max_sims = use_time ? INT_MAX : config.num_simulations;
+
+    while (simulations_done < max_sims) {
+        // Check time limit if enabled
+        if (use_time) {
+            auto now = std::chrono::steady_clock::now();
+            auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - search_start).count();
+            if (elapsed >= config.time_limit_ms) {
+                break;
+            }
+        }
+
+        int batch_size = config.batch_size;
+        if (!use_time) {
+            batch_size = std::min(config.batch_size, config.num_simulations - simulations_done);
+        }
         std::vector<PUCTNode*> leaf_nodes;
         std::vector<std::vector<Move>> tree_moves_batch;  // Track moves for RAVE - Rapid Action Value Estimation
         leaf_nodes.reserve(batch_size);
@@ -268,6 +290,10 @@ Move PUCTEngine::search(const BoardState& root_state) {
                     }
 
                     current->update(value);
+
+                    // Update node dynamics for adaptive exploration
+                    update_node_dynamics(current);
+
                     value = 1.0f - value;
 
                     // Update history heuristic for good moves
@@ -281,14 +307,139 @@ Move PUCTEngine::search(const BoardState& root_state) {
                 }
             }
         }
-        
+
         simulations_done += leaf_nodes.size();
         total_simulations += leaf_nodes.size();
+
+        // Track best move stability every 1000 simulations
+        if (simulations_done % 1000 == 0 || simulations_done >= config.num_simulations) {
+            Move current_best = get_best_move();
+            stability_tracker.update(current_best, simulations_done);
+
+            // Update aspiration window with current best Q value
+            if (config.use_aspiration_windows && simulations_done >= config.aspiration_min_sims) {
+                // Find best child Q value
+                float best_q = -1.0f;
+                for (auto& child : root->children) {
+                    float q = child->Q();
+                    if (q > best_q) best_q = q;
+                }
+                if (best_q >= 0.0f) {
+                    update_aspiration_window(best_q);
+                }
+            }
+
+            // Print progress if verbose
+            if (config.verbose && simulations_done % config.info_interval == 0 && config.info_interval > 0) {
+                std::cout << "Sims: " << simulations_done << "/" << config.num_simulations
+                          << " | Best: " << move_to_string(current_best)
+                          << " | Stability: " << stability_tracker.stability_score
+                          << " | Changes: " << stability_tracker.changes_count;
+
+                if (config.use_aspiration_windows && aspiration_window.active) {
+                    std::cout << " | Aspiration: [" << aspiration_window.previous_best_q - aspiration_window.window_size
+                              << ", " << aspiration_window.previous_best_q + aspiration_window.window_size << "]";
+                }
+                std::cout << std::endl;
+            }
+
+            // Early stopping if position is very stable (optional optimization)
+            if (simulations_done >= config.num_simulations / 2 &&
+                stability_tracker.stability_score > 0.95f &&
+                stability_tracker.changes_count < 2) {
+                if (config.verbose) {
+                    std::cout << "Early stop: Position very stable" << std::endl;
+                }
+                break;
+            }
+        }
     }
-    
-    // Select best move
-    Move best_move = select_move_by_temperature(config.temperature);
-    
+
+    // Check if we should extend search due to instability
+    if (stability_tracker.should_extend_search() && simulations_done < config.num_simulations * 2) {
+        int extension_sims = config.num_simulations / 2;
+        if (config.verbose) {
+            std::cout << "Extending search by " << extension_sims
+                      << " simulations (instability detected)" << std::endl;
+        }
+
+        // Continue search with more simulations
+        int extended_target = simulations_done + extension_sims;
+        while (simulations_done < extended_target) {
+            int batch_size = std::min(config.batch_size, extended_target - simulations_done);
+            std::vector<PUCTNode*> leaf_nodes;
+            std::vector<std::vector<Move>> tree_moves_batch;
+            leaf_nodes.reserve(batch_size);
+            tree_moves_batch.reserve(batch_size);
+
+            for (int i = 0; i < batch_size; i++) {
+                std::vector<Move> tree_moves;
+                PUCTNode* node;
+
+                if (config.use_rave) {
+                    node = select_and_track(root.get(), tree_moves);
+                } else {
+                    node = select(root.get());
+                }
+
+                if (config.use_virtual_loss && node) {
+                    PUCTNode* current = node;
+                    while (current) {
+                        current->add_virtual_loss(config.virtual_loss);
+                        current = current->parent;
+                    }
+                }
+
+                if (node) {
+                    leaf_nodes.push_back(node);
+                    tree_moves_batch.push_back(tree_moves);
+                }
+            }
+
+            if (leaf_nodes.empty()) break;
+
+            expand_and_evaluate_batch(leaf_nodes);
+
+            for (size_t i = 0; i < leaf_nodes.size(); i++) {
+                PUCTNode* node = leaf_nodes[i];
+                float value = node->value_estimate;
+
+                if (config.use_rave) {
+                    backpropagate_with_rave(node, value, tree_moves_batch[i]);
+                } else {
+                    PUCTNode* current = node;
+                    while (current) {
+                        if (config.use_virtual_loss) {
+                            current->remove_virtual_loss(config.virtual_loss);
+                        }
+
+                        current->update(value);
+
+                        // Update node dynamics for adaptive exploration
+                        update_node_dynamics(current);
+
+                        value = 1.0f - value;
+
+                        if (current->parent && value > 0.3f) {
+                            update_history_tables(current->move_from_parent, current->state, current->depth);
+                        }
+
+                        current = current->parent;
+                    }
+                }
+            }
+
+            simulations_done += leaf_nodes.size();
+            total_simulations += leaf_nodes.size();
+        }
+    }
+
+    // Select best move with temperature decay if enabled
+    float final_temp = config.use_temperature_decay ?
+        temp_schedule.get_temperature(simulations_done, config.num_simulations) :
+        config.temperature;
+    Move best_move = select_move_by_temperature(final_temp);
+
     return best_move;
 }
 
@@ -357,21 +508,39 @@ PUCTNode* PUCTEngine::best_child_puct(PUCTNode* node) {
     PUCTNode* best_child = nullptr;
     float best_score = -std::numeric_limits<float>::infinity();
 
+    int move_idx = 0;
     for (auto& child : node->children) {
-        // Use RAVE-enhanced score if enabled, otherwise standard PUCT
-        float score = config.use_rave ?
-            child->rave_puct_score(parent_visits, c_puct, fpu_value, config.rave_k, true) :
-            child->puct_score(parent_visits, c_puct, fpu_value);
+        float score;
+
+        // Use adaptive PUCT if enabled
+        if (config.use_adaptive_cpuct) {
+            score = child->adaptive_puct_score(parent_visits, c_puct, fpu_value, config);
+
+            // Apply move number scaling if enabled
+            if (config.use_move_number_scaling) {
+                float move_factor = compute_move_number_factor(move_idx, node->children.size());
+                score *= move_factor;
+            }
+        } else if (config.use_rave) {
+            // RAVE-enhanced score
+            score = child->rave_puct_score(parent_visits, c_puct, fpu_value, config.rave_k, true);
+        } else {
+            // Standard PUCT
+            score = child->puct_score(parent_visits, c_puct, fpu_value);
+        }
 
         if (score > best_score) {
             best_score = score;
             best_child = child.get();
         }
+
+        move_idx++;
     }
 
     return best_child;
 }
 
+// Dynamic c_puct calculation - AlphaGo Zero formula for adaptive exploration
 float PUCTEngine::get_dynamic_cpuct() const {
     // AlphaGo Zero formula: c_puct = log((1 + N + c_base) / c_base) + c_init
     int N = root ? root->visits.load(std::memory_order_relaxed) : 0;
@@ -496,26 +665,35 @@ void PUCTEngine::generate_legal_moves(PUCTNode* node) {
 
 void PUCTEngine::compute_move_priors(PUCTNode* node) {
     if (node->legal_moves.empty()) return;
-    
+
     node->move_priors.resize(node->legal_moves.size());
-    
+
     float total_score = 0.0f;
-    
+
     // Compute heuristic score for each move
     for (size_t i = 0; i < node->legal_moves.size(); i++) {
         Move move = node->legal_moves[i];
         float score = MoveHeuristics::heuristic_policy_prior(move, node->state, node->depth,
                                                               config.capture_weight, config.check_weight);
-        
+
         // Add killer move bonus
         if (killer_moves.is_killer(move, node->depth)) {
             score *= config.killer_weight;
         }
-        
+
         // Add history heuristic bonus
         int hist = history_table.get(move, node->state.side_to_move);
         score += (hist / 10000.0f) * config.history_weight;
-        
+
+        // Add continuation history bonus (Stockfish-style)
+        if (config.use_continuation_history) {
+            Piece piece = get_moved_piece(node->state, move);
+            if (piece != NO_PIECE) {
+                int cont_hist = continuation_history.get(move, node->state.side_to_move, piece);
+                score += (cont_hist / 16384.0f) * config.continuation_weight;
+            }
+        }
+
         node->move_priors[i] = score;
         total_score += score;
     }
@@ -551,6 +729,7 @@ void PUCTEngine::compute_move_priors(PUCTNode* node) {
 
 // Root node handling
 
+// Dirichlet Noise - AlphaZero-style root exploration for better move diversity
 void PUCTEngine::add_dirichlet_noise_to_root() {
     if (!root || root->move_priors.empty()) return;
     
@@ -718,8 +897,124 @@ void PUCTEngine::ensure_batch_capacity(int size) {
 }
 
 
+Piece PUCTEngine::get_moved_piece(const BoardState& state, Move move) const {
+    int from = move & 0x3F;
+    Bitboard from_bb = 1ULL << from;
+
+    // Find which piece is on the from square
+    for (int pt = 0; pt < 6; pt++) {
+        if (state.pieces[state.side_to_move][pt] & from_bb) {
+            return (Piece)pt;
+        }
+    }
+
+    return NO_PIECE;
+}
+
+// History Heuristic Update - updates main history and continuation history tables
+void PUCTEngine::update_history_tables(Move move, const BoardState& state, int depth) {
+    int color = state.side_to_move ^ 1;  // Opponent's color (who just made the move)
+
+    // Update main history table
+    history_table.update(move, color, depth);
+
+    // Update continuation history if enabled
+    if (config.use_continuation_history) {
+        Piece piece = get_moved_piece(state, move);
+        if (piece != NO_PIECE) {
+            // Stockfish-style bonus: depth^2 for good moves
+            int bonus = depth * depth;
+            continuation_history.update(move, color, piece, bonus);
+        }
+    }
+}
+
+Move PUCTEngine::get_best_move() const {
+    if (!root || root->children.empty()) return 0;
+
+    const PUCTNode* best = nullptr;
+    int max_visits = -1;
+
+    for (auto& child : root->children) {
+        int visits = child->visits.load(std::memory_order_relaxed);
+        if (visits > max_visits) {
+            max_visits = visits;
+            best = child.get();
+        }
+    }
+
+    return best ? best->move_from_parent : 0;
+}
+
+std::string PUCTEngine::move_to_string(Move move) const {
+    if (move == 0) return "(none)";
+
+    static const char* square_names[64] = {
+        "a1", "b1", "c1", "d1", "e1", "f1", "g1", "h1",
+        "a2", "b2", "c2", "d2", "e2", "f2", "g2", "h2",
+        "a3", "b3", "c3", "d3", "e3", "f3", "g3", "h3",
+        "a4", "b4", "c4", "d4", "e4", "f4", "g4", "h4",
+        "a5", "b5", "c5", "d5", "e5", "f5", "g5", "h5",
+        "a6", "b6", "c6", "d6", "e6", "f6", "g6", "h6",
+        "a7", "b7", "c7", "d7", "e7", "f7", "g7", "h7",
+        "a8", "b8", "c8", "d8", "e8", "f8", "g8", "h8"
+    };
+
+    int from = move & 0x3F;
+    int to = (move >> 6) & 0x3F;
+    int flags = (move >> 12) & 0xF;
+
+    std::string result = std::string(square_names[from]) + square_names[to];
+
+    // Add promotion piece
+    if (flags >= MOVE_PROMO_N) {
+        const char promo_chars[] = "nbrq";
+        result += promo_chars[flags & 0x3];
+    }
+
+    return result;
+}
+
+
+// Node Dynamics Tracking - updates Q-value history for adaptive exploration
+void PUCTEngine::update_node_dynamics(PUCTNode* node) {
+    if (!node || !config.use_adaptive_cpuct) return;
+
+    // Update Q history and volatility
+    float current_q = node->Q();
+    node->dynamics.update_q_history(current_q);
+
+    // Update improving flag
+    if (node->parent) {
+        float parent_q = node->parent->Q();
+        node->dynamics.update_improving(current_q, parent_q);
+    }
+
+    // Cache game phase for this node
+    node->dynamics.game_phase = calculate_phase(node->state);
+}
+
+// Move Number Scaling - reduces exploration for late moves in the ordering
+// Based on Stockfish's logarithmic reduction: reduction = log(move_idx) * log(total_moves) / 2.0
+float PUCTEngine::compute_move_number_factor(int move_idx, int total_moves) const {
+    if (!config.use_move_number_scaling || move_idx < 3) {
+        return 1.0f;  // First 3 moves get full exploration
+    }
+
+    // Stockfish-inspired logarithmic reduction
+    // reduction = log(move_idx) * log(total_moves) / 2.0
+    float reduction = std::log((float)move_idx) * std::log((float)total_moves) / 2.0f;
+
+    // Convert to multiplier (lower = less exploration)
+    float factor = 1.0f / (1.0f + reduction * 0.1f);
+
+    return std::max(0.3f, factor);  // Don't reduce below 30%
+}
+
+
 // RAVE (Rapid Action Value Estimation)
 
+// RAVE (Rapid Action Value Estimation) - selects leaf nodes while tracking moves for AMAF updates
 PUCTNode* PUCTEngine::select_and_track(PUCTNode* node, std::vector<Move>& tree_moves) {
     // Select leaf node while tracking moves played during tree traversal
     tree_moves.clear();
@@ -739,6 +1034,7 @@ PUCTNode* PUCTEngine::select_and_track(PUCTNode* node, std::vector<Move>& tree_m
     return node;
 }
 
+// RAVE Backpropagation - updates both standard MCTS and AMAF statistics
 void PUCTEngine::backpropagate_with_rave(PUCTNode* node, float value,
                                          const std::vector<Move>& tree_moves) {
     // Backpropagate value up the tree while updating AMAF statistics
@@ -754,6 +1050,9 @@ void PUCTEngine::backpropagate_with_rave(PUCTNode* node, float value,
         // Update standard PUCT statistics
         current->update(value);
 
+        // Update node dynamics for adaptive exploration
+        update_node_dynamics(current);
+
         // Update AMAF statistics if RAVE is enabled and within depth limit
         if (config.use_rave && depth < config.rave_update_depth && current->parent) {
             update_amaf_stats(current->parent, tree_moves, value);
@@ -764,9 +1063,7 @@ void PUCTEngine::backpropagate_with_rave(PUCTNode* node, float value,
 
         // Update history heuristic for good moves
         if (current->parent && value > 0.3f) {
-            history_table.update(current->move_from_parent,
-                               current->state.side_to_move ^ 1,
-                               current->depth);
+            update_history_tables(current->move_from_parent, current->state, current->depth);
         }
 
         current = current->parent;
@@ -774,6 +1071,7 @@ void PUCTEngine::backpropagate_with_rave(PUCTNode* node, float value,
     }
 }
 
+// AMAF Statistics Update - updates RAVE values for all moves appearing in simulation path
 void PUCTEngine::update_amaf_stats(PUCTNode* node, const std::vector<Move>& sim_moves,
                                    float value) {
     // Update AMAF statistics for all children whose moves appear in the simulation
@@ -796,4 +1094,112 @@ void PUCTEngine::update_amaf_stats(PUCTNode* node, const std::vector<Move>& sim_
             child->update_amaf(value);
         }
     }
+}
+
+
+// Aspiration Window - initialize dynamic search window for faster convergence
+void PUCTEngine::initialize_aspiration_window() {
+    aspiration_window.reset(config.aspiration_initial_window);
+}
+
+// Aspiration Window - update window based on search results (fail-high/fail-low handling)
+void PUCTEngine::update_aspiration_window(float best_q) {
+    aspiration_window.update(best_q, config.aspiration_initial_window);
+}
+
+bool PUCTEngine::should_use_aspiration_window(int simulations_done) const {
+    return config.use_aspiration_windows &&
+           simulations_done >= config.aspiration_min_sims &&
+           aspiration_window.active;
+}
+
+PUCTNode* PUCTEngine::select_child_in_window(PUCTNode* node, float q_lower, float q_upper) {
+    if (!node || node->children.empty()) return nullptr;
+
+    // Select child with highest visits among those within Q window
+    PUCTNode* best_child = nullptr;
+    int best_visits = -1;
+
+    for (auto& child : node->children) {
+        float child_q = child->Q();
+
+        // Check if this child's Q is within the aspiration window
+        if (child_q >= q_lower && child_q <= q_upper) {
+            int visits = child->visits.load(std::memory_order_relaxed);
+            if (visits > best_visits) {
+                best_visits = visits;
+                best_child = child.get();
+            }
+        }
+    }
+
+    // If no child in window, fall back to standard PUCT selection
+    if (!best_child) {
+        return best_child_puct(node);
+    }
+
+    return best_child;
+}
+
+float PUCTEngine::get_current_temperature(int simulations_done) const {
+    if (config.use_temperature_decay) {
+        return temp_schedule.get_temperature(simulations_done, config.num_simulations);
+    }
+    return config.temperature;
+}
+
+// Multi-PV Search - returns top-N best moves with PV lines for analysis
+std::vector<MultiPVResult> PUCTEngine::get_multi_pv(int num_pvs) const {
+    std::vector<MultiPVResult> results;
+
+    if (!root || root->children.empty()) {
+        return results;
+    }
+
+    // Create a list of all children with their stats
+    std::vector<std::pair<int, PUCTNode*>> child_list;
+    for (auto& child : root->children) {
+        int visits = child->visits.load(std::memory_order_relaxed);
+        child_list.emplace_back(visits, child.get());
+    }
+
+    // Sort by visits (descending)
+    std::sort(child_list.begin(), child_list.end(),
+              [](const auto& a, const auto& b) {
+                  return a.first > b.first;
+              });
+
+    // Extract top N PVs
+    int count = std::min(num_pvs, (int)child_list.size());
+    for (int i = 0; i < count; i++) {
+        PUCTNode* child = child_list[i].second;
+        MultiPVResult pv_result;
+        pv_result.move = child->move_from_parent;
+        pv_result.q_value = child->Q();
+        pv_result.visits = child_list[i].first;
+
+        // Get PV line for this child
+        const PUCTNode* current = child;
+        int max_pv_depth = 10;
+        while (current && !current->children.empty() && max_pv_depth-- > 0) {
+            const PUCTNode* best = nullptr;
+            int max_visits = -1;
+
+            for (auto& c : current->children) {
+                int v = c->visits.load(std::memory_order_relaxed);
+                if (v > max_visits) {
+                    max_visits = v;
+                    best = c.get();
+                }
+            }
+
+            if (!best || max_visits == 0) break;
+            pv_result.pv.push_back(best->move_from_parent);
+            current = best;
+        }
+
+        results.push_back(pv_result);
+    }
+
+    return results;
 }

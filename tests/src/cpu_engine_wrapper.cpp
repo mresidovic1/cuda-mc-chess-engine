@@ -10,9 +10,6 @@
 extern chess::Move find_best_move(chess::Board& board, int max_depth, int time_limit_ms);
 extern uint64_t get_total_nodes_searched();
 
-// ============================================================================
-// CPU Engine Wrapper Implementation
-// ============================================================================
 
 class CPUEngineImpl : public EngineInterface {
 public:
@@ -81,9 +78,6 @@ public:
     }
 };
 
-// ============================================================================
-// Factory Function
-// ============================================================================
 
 std::unique_ptr<EngineInterface> create_cpu_engine() {
     return std::make_unique<CPUEngineImpl>();

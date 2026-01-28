@@ -4,13 +4,7 @@
 #include "../../include/kernels/evaluation.cuh"
 #include <curand_kernel.h>
 
-// Kernel: Random Playout (original)
-
-// ============================================================================
-// BATCHED ROLLOUT KERNELS - Massively parallel GPU playouts
-// ============================================================================
-
-// Kernel: Pure random playout (baseline, fast)
+// Playout Mode 1: Pure Random Playout (baseline, fastest but least accurate)
 __global__ void RandomPlayout(
     const BoardState* __restrict__ starting_boards,
     float* __restrict__ results,
@@ -58,9 +52,7 @@ __global__ void RandomPlayout(
     results[idx] = 0.5f;
 }
 
-// Kernel: HYBRID PLAYOUT - 10 random moves + static evaluation (OPTIMIZED)
-// Perfect balance: randomness for variety + eval for accuracy
-
+// Playout Mode 2: Eval Hybrid - 10 random moves + static evaluation (balanced speed/accuracy)
 #define HYBRID_RANDOM_DEPTH 10  // Exactly 10 random moves as requested
 
 __global__ void EvalPlayout(
@@ -106,18 +98,20 @@ __global__ void EvalPlayout(
     // Evaluate final position with optimized static eval
     int eval = gpu_evaluate(&pos);
 
-    // Convert to win probability using sigmoid (centipawns -> probability)
-    float winprob = score_to_winprob(eval, pos.side_to_move);
-
-    // Adjust perspective for starting side
+    // Convert eval to starting side's perspective
+    // gpu_evaluate returns White-relative centipawns, so negate for Black
     if (starting_side == BLACK) {
-        winprob = 1.0f - winprob;
+        eval = -eval;
     }
+
+    // Convert to win probability using sigmoid (centipawns -> probability)
+    float x = (float)eval / 400.0f;
+    float winprob = 1.0f / (1.0f + expf(-x));
 
     results[idx] = winprob;
 }
 
-// Kernel: STATIC EVALUATION ONLY (no playout, fastest)
+// Playout Mode 3: Static Evaluation Only (fastest, no playout)
 // Pure material + positional eval, instant results
 
 __global__ void StaticEval(
@@ -150,9 +144,9 @@ __global__ void StaticEval(
     results[idx] = score_to_winprob(eval, pos.side_to_move);
 }
 
-// ============================================================================
-// QUIESCENCE PLAYOUT - Tactical extension for horizon effect
-// ============================================================================
+
+// Playout Mode 4: Quiescence Playout - tactical extension for horizon effect
+// Uses iterative deepening with SEE-based move ordering and delta pruning
 
 // Check if a move is tactical (capture, check, or promotion)
 __device__
@@ -270,11 +264,12 @@ int see_capture(const BoardState* pos, Move m) {
 
 // ITERATIVE quiescence search with delta pruning and SEE
 // Uses explicit stack to avoid GPU stack overflow from recursion
+// Returns score from pos->side_to_move perspective (negamax convention)
 __device__ __forceinline__
 int quiescence_search_simple(const BoardState* pos, int max_depth) {
     // Limit max_depth to prevent excessive memory usage
     if (max_depth > 4) max_depth = 4;
-    
+
     // Stand-pat - current static evaluation from side-to-move's perspective
     // gpu_evaluate returns white-relative score, so negate for black
     int stand_pat = gpu_evaluate(pos);
@@ -284,7 +279,6 @@ int quiescence_search_simple(const BoardState* pos, int max_depth) {
         return stand_pat;
     }
 
-    // For depth 1, just do a simple 1-ply tactical search (no recursion needed)
     // Generate tactical moves (captures, promotions)
     Move moves[MAX_MOVES];
     int num_moves = generate_tactical_moves(pos, moves);
@@ -316,70 +310,27 @@ int quiescence_search_simple(const BoardState* pos, int max_depth) {
 
     int best_score = stand_pat;
 
-    // Try top tactical moves - ITERATIVE 2-ply search (no recursion)
+    // Try top tactical moves - ITERATIVE 2-ply search
     int try_limit = (num_moves < 4) ? num_moves : 4;  // Reduced to save memory
     for (int i = 0; i < try_limit; i++) {
         // Delta pruning: skip captures that can't improve position
         if (scores[i] < 0 && stand_pat + 1200 < best_score) {
             continue;
         }
-        
+
         BoardState pos1 = *pos;
         make_move(&pos1, moves[i]);
 
-        // Evaluate position after our capture (from opponent's perspective)
-        int eval1 = gpu_evaluate(&pos1);
-        if (pos1.side_to_move == BLACK) eval1 = -eval1;
-        int score1 = -eval1;  // Negate for our perspective
-        
-        // If max_depth > 1, do another ply of tactical search for opponent
+        // Recursively search opponent's responses (negamax: negate child's score)
+        int score1;
         if (max_depth > 1) {
-            Move moves2[MAX_MOVES];
-            int num_moves2 = generate_tactical_moves(&pos1, moves2);
-            
-            if (num_moves2 > 0) {
-                // Opponent has tactical replies - find best one (worst for us)
-                int best_reply = score1;  // If opponent has no good captures, we keep score1
-                
-                // Score and sort opponent's moves
-                int scores2[MAX_MOVES];
-                for (int j = 0; j < num_moves2; j++) {
-                    scores2[j] = see_capture(&pos1, moves2[j]) * 10 + mvv_lva_score(&pos1, moves2[j]);
-                }
-                
-                int sort_limit2 = (num_moves2 < 4) ? num_moves2 : 4;
-                for (int j = 0; j < sort_limit2; j++) {
-                    int best_idx = j;
-                    for (int k = j + 1; k < num_moves2; k++) {
-                        if (scores2[k] > scores2[best_idx]) best_idx = k;
-                    }
-                    if (best_idx != j) {
-                        Move tm = moves2[j]; moves2[j] = moves2[best_idx]; moves2[best_idx] = tm;
-                        int ts = scores2[j]; scores2[j] = scores2[best_idx]; scores2[best_idx] = ts;
-                    }
-                }
-                
-                // Try opponent's top captures
-                int try_limit2 = (num_moves2 < 3) ? num_moves2 : 3;
-                for (int j = 0; j < try_limit2; j++) {
-                    if (scores2[j] < 0) continue;  // Skip losing captures for opponent
-                    
-                    BoardState pos2 = pos1;
-                    make_move(&pos2, moves2[j]);
-                    
-                    // Evaluate after opponent's capture (from our perspective again)
-                    int eval2 = gpu_evaluate(&pos2);
-                    if (pos2.side_to_move == BLACK) eval2 = -eval2;
-                    // pos2.side_to_move is now us again, so eval2 is from our perspective
-                    int opp_score = -eval2;  // Score from opponent's view (negated = our loss)
-                    
-                    // Opponent wants to maximize their score (minimize ours)
-                    if (-opp_score < best_reply) {
-                        best_reply = -opp_score;  // This capture is worse for us
-                    }
-                }
-                score1 = best_reply;
-            }
+            // Recurse: opponent evaluates their position, we negate it
+            score1 = -quiescence_search_simple(&pos1, max_depth - 1);
+        } else {
+            // Leaf: just evaluate and negate (opponent's score = negative of our score)
+            int eval1 = gpu_evaluate(&pos1);
+            if (pos1.side_to_move == BLACK) eval1 = -eval1;
+            score1 = -eval1;
         }
 
         if (score1 > best_score) {
@@ -395,8 +346,8 @@ int quiescence_search_simple(const BoardState* pos, int max_depth) {
     return best_score;
 }
 
-// Kernel: Quiescence Playout - Random moves + tactical search
-// Combines randomness with capture resolution for accuracy
+// Playout Mode 4: Quiescence Playout - 5 random moves + iterative tactical search
+// Combines randomness with capture resolution for accuracy, avoids horizon effect
 __global__ void QuiescencePlayout(
     const BoardState* __restrict__ starting_boards,
     float* __restrict__ results,
@@ -441,13 +392,16 @@ __global__ void QuiescencePlayout(
     // Quiescence search - resolve tactical sequences (captures)
     int eval = quiescence_search_simple(&pos, max_q_depth);
 
-    // Convert centipawns to win probability (sigmoid)
-    float winprob = score_to_winprob(eval, pos.side_to_move);
-
-    // Adjust for which side started
-    if (starting_side == BLACK) {
-        winprob = 1.0f - winprob;
+    // Convert eval to starting side's perspective
+    // quiescence_search_simple returns score from pos.side_to_move perspective
+    // So we need to adjust based on who's moving after the random playout
+    if (pos.side_to_move != starting_side) {
+        eval = -eval;
     }
+
+    // Convert to win probability using sigmoid (centipawns -> probability)
+    float x = (float)eval / 400.0f;
+    float winprob = 1.0f / (1.0f + expf(-x));
 
     results[idx] = winprob;
 }

@@ -12,8 +12,8 @@ dependencies = [omp_dep]
 
 inc_dirs = include_directories('include')
 
-optimized_args = ['-O3', '-march=native', '-DNDEBUG', '-DUNIT_TESTS']
-stack_args = ['-Wl,-stack_size,0x1000000']
+optimized_args = ['/O2', '-DNDEBUG', '-DUNIT_TESTS']
+stack_args = ['/STACK:16777216']
 
 test_exe = executable(
   'chess-tests',
@@ -67,8 +67,3 @@ test('sequential-medium', test_suite_sequential,
 test('sequential-hard', test_suite_sequential,
      args: ['--mode=depth', '--depth=20', '--level=hard'],
      timeout: 400)
-
-# GPU subproject (if CUDA is available)
-if get_option('build_gpu')
-  subdir('gpu')
-endif

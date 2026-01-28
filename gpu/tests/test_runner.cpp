@@ -1,6 +1,10 @@
 // test_runner.cpp - Main test harness for GPU PUCT MCTS Chess Engine
 // Tests FEN parsing, move generation, and tactical solver
 
+// Set this to 0 to disable GPU negamax and use pure MCTS for tests
+// Note: When disabled, tests will use MCTS which is slower but more thorough
+#define USE_GPU_NEGAMAX 1
+
 #include "../include/chess_types.cuh"
 #include "../include/fen.h"
 #include "../include/cpu_movegen.h"
@@ -25,9 +29,6 @@ extern "C" void launch_tactical_solver(
     cudaStream_t stream
 );
 
-// ============================================================================
-// Test Result Tracking
-// ============================================================================
 
 struct TestStats {
     int total;
@@ -54,9 +55,6 @@ struct TestStats {
     }
 };
 
-// ============================================================================
-// Move Notation Helpers
-// ============================================================================
 
 const char* SQUARE_NAMES[64] = {
     "a1", "b1", "c1", "d1", "e1", "f1", "g1", "h1",
@@ -132,9 +130,6 @@ Move uci_to_move(const std::string& uci, const BoardState& pos) {
     return 0;
 }
 
-// ============================================================================
-// FEN Parser Tests
-// ============================================================================
 
 TestStats run_fen_tests() {
     std::cout << "\n" << std::string(60, '=') << "\n";
@@ -195,9 +190,6 @@ TestStats run_fen_tests() {
     return stats;
 }
 
-// ============================================================================
-// Perft Tests (Move Generation Validation)
-// ============================================================================
 
 unsigned long long perft(const BoardState& pos, int depth) {
     if (depth == 0) return 1;
@@ -258,13 +250,11 @@ TestStats run_perft_tests() {
     return stats;
 }
 
-// ============================================================================
-// Tactical Tests
-// ============================================================================
 
 // Run tactical tests using the GPU negamax solver
 TestStats run_tactical_tests(const TestPosition* tests, int num_tests,
                               const std::string& category, int depth = 2) {
+#if USE_GPU_NEGAMAX
     std::cout << "\n" << std::string(60, '=') << "\n";
     std::cout << "TACTICAL TESTS (GPU Negamax) - " << category << "\n";
     std::cout << std::string(60, '=') << "\n\n";
@@ -346,11 +336,22 @@ TestStats run_tactical_tests(const TestPosition* tests, int num_tests,
     cudaFree(d_scores);
 
     return stats;
+#else
+    std::cout << "\n" << std::string(60, '=') << "\n";
+    std::cout << "GPU NEGAMAX DISABLED\n";
+    std::cout << std::string(60, '=') << "\n\n";
+    std::cout << "GPU negamax/tactical search is disabled (USE_GPU_NEGAMAX=0).\n";
+    std::cout << "For pure MCTS testing, please use test_puct_mcts.exe instead.\n";
+    std::cout << "To enable GPU negamax, set USE_GPU_NEGAMAX to 1 in test_runner.cpp\n\n";
+
+    TestStats stats;
+    stats.total = num_tests;
+    stats.passed = 0;
+    stats.failed = 0;
+    return stats;
+#endif
 }
 
-// ============================================================================
-// Print Summary
-// ============================================================================
 
 void print_summary(const std::string& name, const TestStats& stats) {
     std::cout << std::left << std::setw(25) << name;
@@ -359,9 +360,6 @@ void print_summary(const std::string& name, const TestStats& stats) {
     std::cout << "  [" << std::setprecision(0) << stats.total_time_ms << " ms]\n";
 }
 
-// ============================================================================
-// Main
-// ============================================================================
 
 void print_usage(const char* prog) {
     std::cout << "GPU MCTS Chess Engine Test Runner\n\n";

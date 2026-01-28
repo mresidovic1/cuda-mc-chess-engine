@@ -10,9 +10,6 @@
 #include <sstream>
 #include <cctype>
 
-// ============================================================================
-// FEN Parser Results
-// ============================================================================
 
 enum class FENError {
     OK = 0,
@@ -47,9 +44,6 @@ inline const char* FENErrorToString(FENError err) {
     }
 }
 
-// ============================================================================
-// Square name utilities
-// ============================================================================
 
 inline int squareFromName(const char* name) {
     if (!name || !name[0] || !name[1]) return -1;
@@ -68,9 +62,6 @@ inline std::string squareToName(int sq) {
     return std::string(name);
 }
 
-// ============================================================================
-// FEN Parser
-// ============================================================================
 
 class FENParser {
 public:
@@ -319,9 +310,6 @@ private:
 // Standard starting position
 const char* FENParser::STARTPOS = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
 
-// ============================================================================
-// Convenience functions
-// ============================================================================
 
 inline FENError ParseFEN(const std::string& fen, BoardState& board) {
     return FENParser::parse(fen, board);

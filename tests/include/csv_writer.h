@@ -10,9 +10,6 @@
 #include <sstream>
 #include <stdexcept>
 
-// ============================================================================
-// CSV Writer Class
-// ============================================================================
 
 class CSVWriter {
 public:
@@ -115,9 +112,6 @@ private:
     }
 };
 
-// ============================================================================
-// Specialized CSV Writers for Benchmark Results
-// ============================================================================
 
 // Throughput benchmark CSV
 class ThroughputCSV : public CSVWriter {

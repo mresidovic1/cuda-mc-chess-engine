@@ -38,6 +38,7 @@ if "%1"=="-c" set MODE=clean
 if "%1"=="--main" set MODE=main
 if "%1"=="--puct" set MODE=puct
 if "%1"=="--bratko" set MODE=bratko
+if "%1"=="--eval" set MODE=eval
 if "%1"=="--easy" set MODE=easy
 if "%1"=="--medium" set MODE=medium
 if "%1"=="--hard" set MODE=hard
@@ -141,7 +142,7 @@ for %%f in (%CPP_SOURCES%) do (
     set OBJ=%BUILD_DIR%\!NAME!.obj
 
     echo   Compiling: %%f
-    cl.exe /std:c++20 /O2 /EHsc -Iinclude -I"%CUDA_ROOT%\include" /c %%f /Fo!OBJ!
+    "%NVCC%" -O2 -arch=%CUDA_ARCH% -std=c++20 -Iinclude -Xcompiler=/wd4819 --use_fast_math --disable-warnings -c %%f -o !OBJ!
     if errorlevel 1 (
         echo ERROR: Failed to compile %%f
         exit /b 1
@@ -189,14 +190,14 @@ echo ========================================
 
 set MAIN_OBJ=%BUILD_DIR%\main.obj
 echo   Compiling: src\main.cpp
-cl.exe /std:c++20 /O2 /EHsc -Iinclude -I"%CUDA_ROOT%\include" /c src\main.cpp /Fo%MAIN_OBJ%
+"%NVCC%" -O2 -arch=%CUDA_ARCH% -std=c++20 -Iinclude -Xcompiler=/wd4819 --use_fast_math --disable-warnings -c src\main.cpp -o %MAIN_OBJ%
 if errorlevel 1 (
     echo ERROR: Failed to compile main.cpp
     exit /b 1
 )
 
 echo   Linking: puct_chess.exe
-cl.exe %ALL_OBJS% %MAIN_OBJ% /Fe:puct_chess.exe /link /LIBPATH:"%CUDA_ROOT%\lib\x64" cudart.lib curand.lib
+"%NVCC%" %ALL_OBJS% %MAIN_OBJ% -o  puct_chess.exe -L"%CUDA_ROOT%\lib\x64" cudart.lib curand.lib
 if errorlevel 1 (
     echo ERROR: Failed to link puct_chess.exe
     exit /b 1
@@ -225,14 +226,14 @@ echo ========================================
 
 set TEST_PUCT_OBJ=%BUILD_DIR%\test_puct_mcts.obj
 echo   Compiling: tests\test_puct_mcts.cpp
-cl.exe /std:c++20 /O2 /EHsc -Iinclude -I"%CUDA_ROOT%\include" /c tests\test_puct_mcts.cpp /Fo%TEST_PUCT_OBJ%
+"%NVCC%" -O2 -arch=%CUDA_ARCH% -std=c++20 -Iinclude -Xcompiler=/wd4819 --use_fast_math --disable-warnings -c tests\test_puct_mcts.cpp -o %TEST_PUCT_OBJ%
 if errorlevel 1 (
     echo ERROR: Failed to compile test_puct_mcts.cpp
     exit /b 1
 )
 
 echo   Linking: test_puct_mcts.exe
-cl.exe %ALL_OBJS% %TEST_PUCT_OBJ% /Fe:test_puct_mcts.exe /link /LIBPATH:"%CUDA_ROOT%\lib\x64" cudart.lib curand.lib
+"%NVCC%" %ALL_OBJS% %TEST_PUCT_OBJ% -o  test_puct_mcts.exe -L"%CUDA_ROOT%\lib\x64" cudart.lib curand.lib
 if errorlevel 1 (
     echo ERROR: Failed to link test_puct_mcts.exe
     exit /b 1
@@ -272,14 +273,14 @@ echo ========================================
 
 set TEST_BRATKO_OBJ=%BUILD_DIR%\test_bratko_kopec.obj
 echo   Compiling: tests\test_bratko_kopec.cpp
-cl.exe /std:c++20 /O2 /EHsc -Iinclude -I"%CUDA_ROOT%\include" /c tests\test_bratko_kopec.cpp /Fo%TEST_BRATKO_OBJ%
+"%NVCC%" -O2 -arch=%CUDA_ARCH% -std=c++20 -Iinclude -Xcompiler=/wd4819 --use_fast_math --disable-warnings -c tests\test_bratko_kopec.cpp -o %TEST_BRATKO_OBJ%
 if errorlevel 1 (
     echo ERROR: Failed to compile test_bratko_kopec.cpp
     exit /b 1
 )
 
 echo   Linking: test_bratko_kopec.exe
-cl.exe %ALL_OBJS% %TEST_BRATKO_OBJ% /Fe:test_bratko_kopec.exe /link /LIBPATH:"%CUDA_ROOT%\lib\x64" cudart.lib curand.lib
+"%NVCC%" %ALL_OBJS% %TEST_BRATKO_OBJ% -o  test_bratko_kopec.exe -L"%CUDA_ROOT%\lib\x64" cudart.lib curand.lib
 if errorlevel 1 (
     echo ERROR: Failed to link test_bratko_kopec.exe
     exit /b 1
@@ -302,6 +303,53 @@ echo.
 :skip_bratko
 
 REM ========================================
+REM Build evaluation_tests
+REM ========================================
+
+if "%MODE%"=="eval" goto :build_eval
+if "%MODE%"=="tests" goto :build_eval
+if "%MODE%"=="all" goto :build_eval
+goto :skip_eval
+
+:build_eval
+echo ========================================
+echo Building evaluation_tests...
+echo ========================================
+
+set EVAL_OBJ=%BUILD_DIR%\evaluation_tests.obj
+echo   Compiling: tests\evaluation_tests.cpp
+"%NVCC%" -O2 -arch=%CUDA_ARCH% -std=c++20 -Iinclude -Xcompiler=/wd4819 --use_fast_math --disable-warnings -c tests\evaluation_tests.cpp -o %EVAL_OBJ%
+if errorlevel 1 (
+    echo ERROR: Failed to compile evaluation_tests.cpp
+    exit /b 1
+)
+
+echo   Linking: evaluation_tests.exe
+"%NVCC%" %ALL_OBJS% %EVAL_OBJ% -o  evaluation_tests.exe -L"%CUDA_ROOT%\lib\x64" cudart.lib curand.lib
+if errorlevel 1 (
+    echo ERROR: Failed to link evaluation_tests.exe
+    exit /b 1
+)
+
+echo Built evaluation_tests.exe successfully!
+echo.
+
+echo ========================================
+echo Running Evaluation Tests...
+echo ========================================
+evaluation_tests.exe
+if errorlevel 1 (
+    echo.
+    echo ERROR: Evaluation tests failed
+    exit /b 1
+)
+echo.
+
+if "%MODE%"=="eval" goto :done
+
+:skip_eval
+
+REM ========================================
 REM Build test_runner
 REM ========================================
 
@@ -318,14 +366,14 @@ echo ========================================
 
 set RUNNER_OBJ=%BUILD_DIR%\test_runner.obj
 echo   Compiling: tests\test_runner.cpp
-cl.exe /std:c++20 /O2 /EHsc -Iinclude -I"%CUDA_ROOT%\include" /c tests\test_runner.cpp /Fo%RUNNER_OBJ%
+"%NVCC%" -O2 -arch=%CUDA_ARCH% -std=c++20 -Iinclude -Xcompiler=/wd4819 --use_fast_math --disable-warnings -c tests\test_runner.cpp -o %RUNNER_OBJ%
 if errorlevel 1 (
     echo ERROR: Failed to compile test_runner.cpp
     exit /b 1
 )
 
 echo   Linking: test_runner.exe
-cl.exe %ALL_OBJS% %RUNNER_OBJ% /Fe:test_runner.exe /link /LIBPATH:"%CUDA_ROOT%\lib\x64" cudart.lib curand.lib
+"%NVCC%" %ALL_OBJS% %RUNNER_OBJ% -o  test_runner.exe -L"%CUDA_ROOT%\lib\x64" cudart.lib curand.lib
 if errorlevel 1 (
     echo ERROR: Failed to link test_runner.exe
     exit /b 1
@@ -421,6 +469,7 @@ echo   --clean, -c     Clean build artifacts
 echo   --main          Build only main executable
 echo   --puct          Build and run PUCT MCTS tests
 echo   --bratko        Build and run Bratko-Kopec tests
+echo   --eval          Build and run evaluation tests (Phase 1+2+3 features)
 echo   --easy          Build and run easy tactical tests (mate in 1-2)
 echo   --medium        Build and run medium tactical tests (mate in 4-5)
 echo   --hard          Build and run hard tactical tests (mate in 8-12)
@@ -435,6 +484,7 @@ echo   build_and_test.bat --all        Build main and run all tests
 echo   build_and_test.bat --clean      Clean build artifacts
 echo   build_and_test.bat --puct       Run only PUCT tests
 echo   build_and_test.bat --bratko     Run only Bratko-Kopec tests
+echo   build_and_test.bat --eval       Run evaluation tests
 echo   build_and_test.bat --easy       Run easy tactical tests
 echo   build_and_test.bat --medium     Run medium tactical tests
 echo   build_and_test.bat --hard       Run hard tactical tests

@@ -90,9 +90,6 @@ enum SquareIndex {
     A8, B8, C8, D8, E8, F8, G8, H8
 };
 
-// ============================================================================
-// BoardState - Compact representation for GPU (64 bytes total)
-// ============================================================================
 struct BoardState {
     // Piece bitboards (48 bytes)
     Bitboard pieces[2][6];  // [color][piece_type]
@@ -143,12 +140,6 @@ struct BoardState {
 
 static_assert(sizeof(BoardState) <= 256, "BoardState exceeds 256 bytes!");
 
-// ============================================================================
-// Move encoding: 16 bits
-// Bits 0-5:   From square (0-63)
-// Bits 6-11:  To square (0-63)
-// Bits 12-15: Flags
-// ============================================================================
 
 __host__ __device__ __forceinline__
 Move encode_move(Square from, Square to, uint8_t flags = MOVE_QUIET) {
@@ -186,14 +177,8 @@ Piece promotion_piece(Move m) {
     return (move_flags(m) & 0x3) + KNIGHT;  // N=0, B=1, R=2, Q=3 -> KNIGHT...QUEEN
 }
 
-// ============================================================================
-// Move generation constants
-// ============================================================================
 #define MAX_MOVES 256
 
-// ============================================================================
-// Bit manipulation utilities
-// ============================================================================
 
 #ifdef _MSC_VER
 #include <intrin.h>
@@ -250,15 +235,9 @@ int pop_lsb_index(Bitboard& b) {
     return idx;
 }
 
-// ============================================================================
-// Magic bitboard constants
-// ============================================================================
 #define ROOK_MAGIC_BITS   12
 #define BISHOP_MAGIC_BITS 9
 
-// ============================================================================
-// CUDA error checking macro
-// ============================================================================
 #define CUDA_CHECK(call) \
     do { \
         cudaError_t err = call; \

@@ -17,9 +17,6 @@ bool gives_check_simple(BoardState* pos, Move m) {
     return in_check(&temp);
 }
 
-// ============================================================================
-// TACTICAL MOVE ORDERING - Enhanced with SEE
-// ============================================================================
 
 __device__
 int tactical_move_score(const BoardState* pos, Move m, bool gives_check) {
@@ -152,10 +149,6 @@ int tactical_depth2(BoardState* pos, int alpha, int beta, int ply) {
     return best;
 }
 
-// ============================================================================
-// TACTICAL DEPTH 4 - ADVANCED ITERATIVE (NO RECURSION!)
-// Features: SEE ordering, Selective Extensions, LMR, Futility, Null-Move
-// ============================================================================
 
 __device__ __noinline__
 int tactical_depth4(BoardState* pos, int alpha, int beta, int ply) {
@@ -204,9 +197,6 @@ int tactical_depth4(BoardState* pos, int alpha, int beta, int ply) {
 
     int best = -(MATE_SCORE + 1);
     
-    // ========================================================================
-    // PLY 1
-    // ========================================================================
     for (int i = 0; i < num_moves && i < 20; i++) {
         // Futility: Skip quiet moves when far behind
         if (futility_prune && scores[i] < 10000) continue;
@@ -251,9 +241,6 @@ int tactical_depth4(BoardState* pos, int alpha, int beta, int ply) {
             
             int worst2 = MATE_SCORE + 1;
             
-            // ====================================================================
-            // PLY 2
-            // ====================================================================
             for (int j = 0; j < num_moves2 && j < max_ply2; j++) {
                 int max_ply3 = 15;
                 if (j >= 6 && scores2[j] < 10000) max_ply3 = 10; // LMR
@@ -291,9 +278,6 @@ int tactical_depth4(BoardState* pos, int alpha, int beta, int ply) {
                     
                     int best3 = -(MATE_SCORE + 1);
                     
-                    // ================================================================
-                    // PLY 3
-                    // ================================================================
                     for (int k = 0; k < num_moves3 && k < max_ply3; k++) {
                         int max_ply4 = 10;
                         if (k >= 5 && scores3[k] < 10000) max_ply4 = 7; // LMR
@@ -312,9 +296,6 @@ int tactical_depth4(BoardState* pos, int alpha, int beta, int ply) {
                         if (num_moves4 == 0) {
                             s4 = in_check(&pos4) ? (MATE_SCORE - ply - 3) : 0;
                         } else {
-                            // ============================================================
-                            // PLY 4 - Leaf evaluation
-                            // ============================================================
                             int worst4 = MATE_SCORE + 1;
                             for (int m = 0; m < num_moves4 && m < max_ply4; m++) {
                                 BoardState pos5 = pos4;
@@ -345,10 +326,6 @@ int tactical_depth4(BoardState* pos, int alpha, int beta, int ply) {
     return best;
 }
 
-// ============================================================================
-// TACTICAL DEPTH 6 - ADVANCED ITERATIVE (NO RECURSION!)
-// Uses depth4 as subroutine (which is fully iterative)
-// ============================================================================
 
 __device__ __noinline__
 int tactical_depth6(BoardState* pos, int alpha, int beta, int ply) {
@@ -617,10 +594,6 @@ int tactical_depth4_old(BoardState* pos, int alpha, int beta, int ply) {
     return best;
 }
 
-// ============================================================================
-// TACTICAL DEPTH 6 - Iterative mate-in-6 solver (NO RECURSION)
-// Very aggressive pruning for acceptable speed
-// ============================================================================
 
 
 
@@ -717,7 +690,10 @@ __global__ void TacticalSolver(
             bool is_check = in_check(&next_pos);
             if (test_count != 0 || !is_check) {
                 // Not actually mate, use regular eval
-                score = -gpu_evaluate(&next_pos);
+                // FIXED: Convert to side-to-move perspective before negating
+                int eval = gpu_evaluate(&next_pos);
+                if (next_pos.side_to_move == BLACK) eval = -eval;
+                score = -eval;
             }
         }
 

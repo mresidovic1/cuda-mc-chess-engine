@@ -1,2 +1,0 @@
-option('build_gpu', type: 'boolean', value: true,
-       description: 'Build GPU chess engine (requires CUDA)')

@@ -10,9 +10,6 @@
 #include <vector>
 #include <string>
 
-// ============================================================================
-// Configuration
-// ============================================================================
 
 struct FixedTimeConfig {
     std::string output_file = "results_fixed_time.csv";
@@ -23,9 +20,6 @@ struct FixedTimeConfig {
     bool verbose = false;
 };
 
-// ============================================================================
-// Parse Command Line Arguments
-// ============================================================================
 
 FixedTimeConfig parse_args(int argc, char** argv) {
     FixedTimeConfig config;
@@ -79,9 +73,6 @@ FixedTimeConfig parse_args(int argc, char** argv) {
     return config;
 }
 
-// ============================================================================
-// Get Test Suite
-// ============================================================================
 
 std::vector<TestPosition> get_test_suite(const std::string& suite_name) {
     if (suite_name == "bratko-kopec") {
@@ -98,9 +89,6 @@ std::vector<TestPosition> get_test_suite(const std::string& suite_name) {
     }
 }
 
-// ============================================================================
-// Test Single Position with Time Budget
-// ============================================================================
 
 struct QualityResult {
     std::string move;
@@ -148,9 +136,6 @@ QualityResult test_position_timed(EngineInterface& engine, const TestPosition& p
     return quality;
 }
 
-// ============================================================================
-// Main Benchmark
-// ============================================================================
 
 int main(int argc, char** argv) {
     FixedTimeConfig config = parse_args(argc, argv);

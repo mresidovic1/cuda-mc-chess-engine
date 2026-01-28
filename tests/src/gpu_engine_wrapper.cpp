@@ -13,9 +13,6 @@
 // External initialization functions
 extern void init_attack_tables();
 
-// ============================================================================
-// GPU Engine Wrapper Implementation
-// ============================================================================
 
 class GPUEngineImpl : public EngineInterface {
 public:
@@ -151,9 +148,6 @@ private:
     int current_simulations_;
 };
 
-// ============================================================================
-// Factory Function
-// ============================================================================
 
 std::unique_ptr<EngineInterface> create_gpu_engine() {
     return std::make_unique<GPUEngineImpl>();

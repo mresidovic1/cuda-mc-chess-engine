@@ -1,0 +1,34 @@
+Improvements
+
+Bug fixes (mostly due to using the Jaglavak engine for reference, then switching to different implementation/architectural design):
+    Playout perspective bug - caused engine to sometimes maximize opponent's score
+    Tactical solver perspective bug - all hard tactical tests failing with very negative scores
+
+Methodology fixes:
+    Increased number of simulations:
+    Default simulations: 10k → 350k
+    Quick preset: 1k → 50k
+    Normal preset: 10k → 350k
+    Strong preset: 50k → 1 million
+Core engine improvements:
+    Continuation history - track move quality (higher priority for better moves)
+    Stockfish 10's best move change tracking
+    Adaptive exploration
+        Dynamic c_puct based on node statistics
+        Move number scaling (Stockfish-style reductions)
+    Root enhancements
+        Aspiration windows
+        Temperature decay schedule
+
+Evaluation improvements:
+    Tapered evaluation system
+    Added material imbalance evaluation
+    Enhanced bishop pair with wing pawn bonuses
+    … (previse za pisat detaljno - Stockfish 10 as reference)
+
+Tests updates:
+    Added 28 new tests: https://github.com/johnbergbom/Amundsen/blob/master/testsuites/bs2830.epd
+*Todo: Improve tests by look at top 3 moves and comparing evaluation to stockfish
+
+Benchmark implementation:
+    Implemented comparison benchmarks between the CPU and GPU versions
