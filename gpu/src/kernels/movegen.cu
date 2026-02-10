@@ -7,6 +7,12 @@
 #define ROOK_MAGIC_BITS   12
 #define BISHOP_MAGIC_BITS 9
 
+// Safe move append (prevents overflow)
+#define PUSH_MOVE_SAFE(m) do { \
+    if (count >= max_moves) return count; \
+    moves[count++] = (m); \
+} while(0)
+
 // Attack tables - precalculate to improve speed
 __constant__ Bitboard g_KNIGHT_ATTACKS[64];
 __constant__ Bitboard g_KING_ATTACKS[64];
@@ -66,7 +72,7 @@ extern "C" cudaError_t copy_bishop_attacks(const Bitboard* data) {
 // Move generation helpers
 
 __device__
-int generate_pawn_moves(const BoardState* pos, Move* moves, Bitboard target) {
+int generate_pawn_moves_cap(const BoardState* pos, Move* moves, Bitboard target, int max_moves) {
     int count = 0;
     int us = pos->side_to_move;
     int them = us ^ 1;
@@ -106,28 +112,28 @@ int generate_pawn_moves(const BoardState* pos, Move* moves, Bitboard target) {
     while (non_promo_push) {
         Square to = pop_lsb_index(non_promo_push);
         Square from = to - push_dir;
-        moves[count++] = encode_move(from, to, MOVE_QUIET);
+        PUSH_MOVE_SAFE(encode_move(from, to, MOVE_QUIET));
     }
 
     Bitboard dbl = double_push & target;
     while (dbl) {
         Square to = pop_lsb_index(dbl);
         Square from = to - 2 * push_dir;
-        moves[count++] = encode_move(from, to, MOVE_DOUBLE_PUSH);
+        PUSH_MOVE_SAFE(encode_move(from, to, MOVE_DOUBLE_PUSH));
     }
 
     Bitboard lc = left_cap & ~promo_rank & target;
     while (lc) {
         Square to = pop_lsb_index(lc);
         Square from = to - push_dir + 1;
-        moves[count++] = encode_move(from, to, MOVE_CAPTURE);
+        PUSH_MOVE_SAFE(encode_move(from, to, MOVE_CAPTURE));
     }
 
     Bitboard rc = right_cap & ~promo_rank & target;
     while (rc) {
         Square to = pop_lsb_index(rc);
         Square from = to - push_dir - 1;
-        moves[count++] = encode_move(from, to, MOVE_CAPTURE);
+        PUSH_MOVE_SAFE(encode_move(from, to, MOVE_CAPTURE));
     }
 
     // Promotions
@@ -135,50 +141,50 @@ int generate_pawn_moves(const BoardState* pos, Move* moves, Bitboard target) {
     while (promo_push) {
         Square to = pop_lsb_index(promo_push);
         Square from = to - push_dir;
-        moves[count++] = encode_move(from, to, MOVE_PROMO_Q);
-        moves[count++] = encode_move(from, to, MOVE_PROMO_R);
-        moves[count++] = encode_move(from, to, MOVE_PROMO_B);
-        moves[count++] = encode_move(from, to, MOVE_PROMO_N);
+        PUSH_MOVE_SAFE(encode_move(from, to, MOVE_PROMO_Q));
+        PUSH_MOVE_SAFE(encode_move(from, to, MOVE_PROMO_R));
+        PUSH_MOVE_SAFE(encode_move(from, to, MOVE_PROMO_B));
+        PUSH_MOVE_SAFE(encode_move(from, to, MOVE_PROMO_N));
     }
 
     Bitboard promo_lc = left_cap & promo_rank & target;
     while (promo_lc) {
         Square to = pop_lsb_index(promo_lc);
         Square from = to - push_dir + 1;
-        moves[count++] = encode_move(from, to, MOVE_PROMO_CAP_Q);
-        moves[count++] = encode_move(from, to, MOVE_PROMO_CAP_R);
-        moves[count++] = encode_move(from, to, MOVE_PROMO_CAP_B);
-        moves[count++] = encode_move(from, to, MOVE_PROMO_CAP_N);
+        PUSH_MOVE_SAFE(encode_move(from, to, MOVE_PROMO_CAP_Q));
+        PUSH_MOVE_SAFE(encode_move(from, to, MOVE_PROMO_CAP_R));
+        PUSH_MOVE_SAFE(encode_move(from, to, MOVE_PROMO_CAP_B));
+        PUSH_MOVE_SAFE(encode_move(from, to, MOVE_PROMO_CAP_N));
     }
 
     Bitboard promo_rc = right_cap & promo_rank & target;
     while (promo_rc) {
         Square to = pop_lsb_index(promo_rc);
         Square from = to - push_dir - 1;
-        moves[count++] = encode_move(from, to, MOVE_PROMO_CAP_Q);
-        moves[count++] = encode_move(from, to, MOVE_PROMO_CAP_R);
-        moves[count++] = encode_move(from, to, MOVE_PROMO_CAP_B);
-        moves[count++] = encode_move(from, to, MOVE_PROMO_CAP_N);
+        PUSH_MOVE_SAFE(encode_move(from, to, MOVE_PROMO_CAP_Q));
+        PUSH_MOVE_SAFE(encode_move(from, to, MOVE_PROMO_CAP_R));
+        PUSH_MOVE_SAFE(encode_move(from, to, MOVE_PROMO_CAP_B));
+        PUSH_MOVE_SAFE(encode_move(from, to, MOVE_PROMO_CAP_N));
     }
 
     // En passant
     while (ep_left) {
         Square to = pop_lsb_index(ep_left);
         Square from = to - push_dir + 1;
-        moves[count++] = encode_move(from, to, MOVE_EP_CAPTURE);
+        PUSH_MOVE_SAFE(encode_move(from, to, MOVE_EP_CAPTURE));
     }
 
     while (ep_right) {
         Square to = pop_lsb_index(ep_right);
         Square from = to - push_dir - 1;
-        moves[count++] = encode_move(from, to, MOVE_EP_CAPTURE);
+        PUSH_MOVE_SAFE(encode_move(from, to, MOVE_EP_CAPTURE));
     }
 
     return count;
 }
 
 __device__
-int generate_knight_moves(const BoardState* pos, Move* moves, Bitboard target) {
+int generate_knight_moves_cap(const BoardState* pos, Move* moves, Bitboard target, int max_moves) {
     int count = 0;
     int us = pos->side_to_move;
     Bitboard knights = pos->pieces[us][KNIGHT];
@@ -192,14 +198,14 @@ int generate_knight_moves(const BoardState* pos, Move* moves, Bitboard target) {
         while (attacks) {
             Square to = pop_lsb_index(attacks);
             uint8_t flags = (enemy & (C64(1) << to)) ? MOVE_CAPTURE : MOVE_QUIET;
-            moves[count++] = encode_move(from, to, flags);
+            PUSH_MOVE_SAFE(encode_move(from, to, flags));
         }
     }
     return count;
 }
 
 __device__
-int generate_bishop_moves(const BoardState* pos, Move* moves, Bitboard target) {
+int generate_bishop_moves_cap(const BoardState* pos, Move* moves, Bitboard target, int max_moves) {
     int count = 0;
     int us = pos->side_to_move;
     Bitboard bishops = pos->pieces[us][BISHOP];
@@ -214,14 +220,14 @@ int generate_bishop_moves(const BoardState* pos, Move* moves, Bitboard target) {
         while (attacks) {
             Square to = pop_lsb_index(attacks);
             uint8_t flags = (enemy & (C64(1) << to)) ? MOVE_CAPTURE : MOVE_QUIET;
-            moves[count++] = encode_move(from, to, flags);
+            PUSH_MOVE_SAFE(encode_move(from, to, flags));
         }
     }
     return count;
 }
 
 __device__
-int generate_rook_moves(const BoardState* pos, Move* moves, Bitboard target) {
+int generate_rook_moves_cap(const BoardState* pos, Move* moves, Bitboard target, int max_moves) {
     int count = 0;
     int us = pos->side_to_move;
     Bitboard rooks = pos->pieces[us][ROOK];
@@ -236,14 +242,14 @@ int generate_rook_moves(const BoardState* pos, Move* moves, Bitboard target) {
         while (attacks) {
             Square to = pop_lsb_index(attacks);
             uint8_t flags = (enemy & (C64(1) << to)) ? MOVE_CAPTURE : MOVE_QUIET;
-            moves[count++] = encode_move(from, to, flags);
+            PUSH_MOVE_SAFE(encode_move(from, to, flags));
         }
     }
     return count;
 }
 
 __device__
-int generate_queen_moves(const BoardState* pos, Move* moves, Bitboard target) {
+int generate_queen_moves_cap(const BoardState* pos, Move* moves, Bitboard target, int max_moves) {
     int count = 0;
     int us = pos->side_to_move;
     Bitboard queens = pos->pieces[us][QUEEN];
@@ -258,18 +264,20 @@ int generate_queen_moves(const BoardState* pos, Move* moves, Bitboard target) {
         while (attacks) {
             Square to = pop_lsb_index(attacks);
             uint8_t flags = (enemy & (C64(1) << to)) ? MOVE_CAPTURE : MOVE_QUIET;
-            moves[count++] = encode_move(from, to, flags);
+            PUSH_MOVE_SAFE(encode_move(from, to, flags));
         }
     }
     return count;
 }
 
 __device__
-int generate_king_moves(const BoardState* pos, Move* moves, Bitboard target) {
+int generate_king_moves_cap(const BoardState* pos, Move* moves, Bitboard target, int max_moves) {
     int count = 0;
     int us = pos->side_to_move;
     int them = us ^ 1;
-    Square king_sq = lsb(pos->pieces[us][KING]);
+    Bitboard king_bb = pos->pieces[us][KING];
+    if (king_bb == 0) return 0;
+    Square king_sq = lsb(king_bb);
     Bitboard our_pieces = pos->us();
     Bitboard enemy = pos->them();
     Bitboard occ = pos->occupied();
@@ -280,7 +288,7 @@ int generate_king_moves(const BoardState* pos, Move* moves, Bitboard target) {
         Square to = pop_lsb_index(attacks);
         if (!is_attacked(pos, to, them)) {
             uint8_t flags = (enemy & (C64(1) << to)) ? MOVE_CAPTURE : MOVE_QUIET;
-            moves[count++] = encode_move(king_sq, to, flags);
+            PUSH_MOVE_SAFE(encode_move(king_sq, to, flags));
         }
     }
 
@@ -291,26 +299,26 @@ int generate_king_moves(const BoardState* pos, Move* moves, Bitboard target) {
                 !(occ & C64(0x60)) &&
                 !is_attacked(pos, F1, them) &&
                 !is_attacked(pos, G1, them)) {
-                moves[count++] = encode_move(E1, G1, MOVE_KING_CASTLE);
+                PUSH_MOVE_SAFE(encode_move(E1, G1, MOVE_KING_CASTLE));
             }
             if ((pos->castling & CASTLE_WQ) &&
                 !(occ & C64(0x0E)) &&
                 !is_attacked(pos, D1, them) &&
                 !is_attacked(pos, C1, them)) {
-                moves[count++] = encode_move(E1, C1, MOVE_QUEEN_CASTLE);
+                PUSH_MOVE_SAFE(encode_move(E1, C1, MOVE_QUEEN_CASTLE));
             }
         } else {
             if ((pos->castling & CASTLE_BK) &&
                 !(occ & C64(0x6000000000000000)) &&
                 !is_attacked(pos, F8, them) &&
                 !is_attacked(pos, G8, them)) {
-                moves[count++] = encode_move(E8, G8, MOVE_KING_CASTLE);
+                PUSH_MOVE_SAFE(encode_move(E8, G8, MOVE_KING_CASTLE));
             }
             if ((pos->castling & CASTLE_BQ) &&
                 !(occ & C64(0x0E00000000000000)) &&
                 !is_attacked(pos, D8, them) &&
                 !is_attacked(pos, C8, them)) {
-                moves[count++] = encode_move(E8, C8, MOVE_QUEEN_CASTLE);
+                PUSH_MOVE_SAFE(encode_move(E8, C8, MOVE_QUEEN_CASTLE));
             }
         }
     }
@@ -321,15 +329,16 @@ int generate_king_moves(const BoardState* pos, Move* moves, Bitboard target) {
 // Generate all pseudo-legal moves
 
 __device__
-int generate_pseudo_legal_moves(const BoardState* pos, Move* moves) {
+int generate_pseudo_legal_moves_cap(const BoardState* pos, Move* moves, int max_moves) {
+    if (max_moves <= 0) return 0;
     Bitboard target = ALL_SQUARES;
     int count = 0;
-    count += generate_pawn_moves(pos, moves + count, target);
-    count += generate_knight_moves(pos, moves + count, target);
-    count += generate_bishop_moves(pos, moves + count, target);
-    count += generate_rook_moves(pos, moves + count, target);
-    count += generate_queen_moves(pos, moves + count, target);
-    count += generate_king_moves(pos, moves + count, target);
+    if (count < max_moves) count += generate_pawn_moves_cap(pos, moves + count, target, max_moves - count);
+    if (count < max_moves) count += generate_knight_moves_cap(pos, moves + count, target, max_moves - count);
+    if (count < max_moves) count += generate_bishop_moves_cap(pos, moves + count, target, max_moves - count);
+    if (count < max_moves) count += generate_rook_moves_cap(pos, moves + count, target, max_moves - count);
+    if (count < max_moves) count += generate_queen_moves_cap(pos, moves + count, target, max_moves - count);
+    if (count < max_moves) count += generate_king_moves_cap(pos, moves + count, target, max_moves - count);
     return count;
 }
 
@@ -354,6 +363,9 @@ void make_move(BoardState* pos, Move m) {
             moving_piece = p;
             break;
         }
+    }
+    if (moving_piece == NO_PIECE) {
+        return;
     }
 
     // Remove captured piece - if any
@@ -433,18 +445,30 @@ void make_move(BoardState* pos, Move m) {
 // Legal move generation
 
 __device__
-int generate_legal_moves(const BoardState* pos, Move* moves) {
+int generate_legal_moves_cap(const BoardState* pos, Move* moves, int max_moves) {
+    if (max_moves <= 0) return 0;
     Move pseudo_moves[MAX_MOVES];
-    int num_pseudo = generate_pseudo_legal_moves(pos, pseudo_moves);
+    int num_pseudo = generate_pseudo_legal_moves_cap(pos, pseudo_moves, MAX_MOVES);
 
     int num_legal = 0;
     for (int i = 0; i < num_pseudo; i++) {
+        // Guard against invalid pseudo-moves (from square must contain our piece)
+        Square from = move_from(pseudo_moves[i]);
+        if ((pos->color_pieces(pos->side_to_move) & (C64(1) << from)) == 0) {
+            continue;
+        }
+
         BoardState copy = *pos;
         make_move(&copy, pseudo_moves[i]);
 
         // Check if our king is in check after the move
-        Square our_king = lsb(copy.pieces[pos->side_to_move][KING]);
+        Bitboard king_bb = copy.pieces[pos->side_to_move][KING];
+        if (king_bb == 0) {
+            continue;
+        }
+        Square our_king = lsb(king_bb);
         if (!is_attacked(&copy, our_king, copy.side_to_move)) {
+            if (num_legal >= max_moves) break;
             moves[num_legal++] = pseudo_moves[i];
         }
     }

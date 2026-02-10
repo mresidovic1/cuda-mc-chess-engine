@@ -47,4 +47,4 @@ extern "C" void launch_tactical_solver(
     cudaStream_t stream
 );
 
-#endif // KERNEL_LAUNCHERS_H
+#endif 

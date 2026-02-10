@@ -1,61 +1,24 @@
-# GPU Chess Engine - Quick Start
+# GPU Chess Engine
 
-GPU-accelerated chess engine using Monte Carlo Tree Search (MCTS) with CUDA.
+GPU-accelerated engine based on PUCT/MCTS (CUDA).
 
 ## Prerequisites
 
-- NVIDIA GPU with CUDA support (Compute Capability 7.5+)
-- CUDA Toolkit 12.6 or 13.1+
-- Windows with MSVC compiler
+- NVIDIA GPU with CUDA support
+- CUDA Toolkit installed
+- CMake 3.18+
+- MSVC or another C++17 compiler supported by your CUDA toolkit
 
-## Building
+## Build
 
-```bash
-cd gpu
-
-# Build MCTS engine
-scripts\build.bat
-
-# Build test suite
-scripts\build_tests.bat
-```
-
-**Note**: Adjust `-arch=sm_75` in build scripts to match your GPU:
-- RTX 20xx: `sm_75`
-- RTX 30xx: `sm_86`
-- RTX 40xx: `sm_89`
-
-## Running
-
-### MCTS Engine
+From the repository root, generate build files and compile:
 
 ```bash
-build\main.exe
+cmake -S tests -B tests/build
+cmake --build tests/build --config Release
 ```
 
-### Test Suite
+### Notes
 
-```bash
-# Run all tests
-build\test_runner.exe --all
-
-# Run specific test suites
-build\test_runner.exe --perft     # Move generation validation
-build\test_runner.exe --easy      # Tactical tests (mate in 1)
-build\test_runner.exe --medium    # Tactical tests (mate in 4-5)
-build\test_runner.exe --hard      # Tactical tests (mate in 8-12)
-```
-
-## Current Limitations
-
-- **Tactical solver depth**: Fixed at 2 plies (solves mate-in-1 only)
-- Medium/hard tactical tests require deeper search (not yet implemented)
-
-## Test Results
-
-| Test Suite | Pass Rate |
-|------------|-----------|
-| Perft (move generation) | 100% (16/16) |
-| Easy tactical (mate-in-1) | 100% (5/5) |
-| Medium tactical (mate-in-4/5) | 0-20% |
-| Hard tactical (mate-in-8/12) | 0-20% |
+- Ensure `nvcc` is on your PATH (provided by the CUDA Toolkit).
+- If your GPU architecture is not covered by the default CMake settings, update `CUDA_ARCHITECTURES` in `tests/CMakeLists.txt`.

@@ -165,6 +165,7 @@ int generate_tactical_moves(const BoardState* pos, Move* moves) {
     int count = 0;
     for (int i = 0; i < total; i++) {
         if (is_tactical_move(pos, all_moves[i])) {
+            if (count >= MAX_MOVES) break;
             moves[count++] = all_moves[i];
         }
     }

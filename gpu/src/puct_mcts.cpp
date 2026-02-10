@@ -11,20 +11,6 @@
 #include <chrono>
 #include <limits>
 
-    const BoardState* d_boards,
-    float* d_results,
-    int numBoards,
-    unsigned int seed,
-    cudaStream_t stream
-);
-
-extern "C" void launch_static_eval(
-    const BoardState* d_boards,
-    float* d_results,
-    int numBoards,
-    cudaStream_t stream
-);
-
 #include "../include/cpu_movegen.h"
 
 // Simplified piece-square tables for move ordering
@@ -176,6 +162,12 @@ PUCTEngine::~PUCTEngine() {
 void PUCTEngine::init() {
     // Allocate GPU memory
     max_batch_size = config.batch_size;
+
+    // Increase device stack size for recursive quiescence search
+    size_t stack_size = 64 * 1024;
+    CUDA_CHECK(cudaDeviceSetLimit(cudaLimitStackSize, stack_size));
+    size_t heap_size = 64 * 1024 * 1024;
+    CUDA_CHECK(cudaDeviceSetLimit(cudaLimitMallocHeapSize, heap_size));
     
     CUDA_CHECK(cudaMalloc(&d_boards, max_batch_size * sizeof(BoardState)));
     CUDA_CHECK(cudaMalloc(&d_results, max_batch_size * sizeof(float)));
@@ -622,15 +614,19 @@ void PUCTEngine::evaluate_positions_gpu(const std::vector<PUCTNode*>& nodes) {
     switch (config.playout_mode) {
         case PlayoutMode::QUIESCENCE:
             launch_quiescence_playout(d_boards, d_results, count, seed, config.quiescence_depth, 0);
+            CUDA_CHECK(cudaGetLastError());
             break;
         case PlayoutMode::EVAL_HYBRID:
             launch_eval_playout(d_boards, d_results, count, seed, 0);
+            CUDA_CHECK(cudaGetLastError());
             break;
         case PlayoutMode::STATIC_EVAL:
             launch_static_eval(d_boards, d_results, count, 0);
+            CUDA_CHECK(cudaGetLastError());
             break;
         default:
             launch_quiescence_playout(d_boards, d_results, count, seed, config.quiescence_depth, 0);
+            CUDA_CHECK(cudaGetLastError());
     }
     
     CUDA_CHECK(cudaDeviceSynchronize());

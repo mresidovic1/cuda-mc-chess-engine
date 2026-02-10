@@ -1,6 +1,3 @@
-// fen.h - FEN (Forsyth-Edwards Notation) parsing and generation
-// Allows setting up arbitrary chess positions for testing
-
 #ifndef FEN_H
 #define FEN_H
 

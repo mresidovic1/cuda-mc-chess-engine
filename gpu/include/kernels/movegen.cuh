@@ -23,16 +23,20 @@ extern __device__ Bitboard g_BISHOP_ATTACKS[64][512];
 
 // Magic bitboard lookups - defined inline in header
 __device__ __forceinline__ Bitboard rook_attacks(Square sq, Bitboard occ) {
+    if (sq < 0 || sq > 63) return 0;
     occ &= g_ROOK_MASKS[sq];
     occ *= g_ROOK_MAGICS[sq];
     occ >>= (64 - 12); // ROOK_MAGIC_BITS
+    occ &= ((1ULL << 12) - 1);
     return g_ROOK_ATTACKS[sq][occ];
 }
 
 __device__ __forceinline__ Bitboard bishop_attacks(Square sq, Bitboard occ) {
+    if (sq < 0 || sq > 63) return 0;
     occ &= g_BISHOP_MASKS[sq];
     occ *= g_BISHOP_MAGICS[sq];
     occ >>= (64 - 9); // BISHOP_MAGIC_BITS
+    occ &= ((1ULL << 9) - 1);
     return g_BISHOP_ATTACKS[sq][occ];
 }
 
@@ -47,6 +51,7 @@ extern __constant__ Bitboard g_KING_ATTACKS[64];
 
 // Attack detection - defined inline in header
 __device__ __forceinline__ bool is_attacked(const BoardState* pos, Square sq, int by_color) {
+    if (sq < 0 || sq > 63) return false;
     Bitboard occ = pos->occupied();
     Bitboard attackers =
         (g_PAWN_ATTACKS[by_color ^ 1][sq] & pos->pieces[by_color][PAWN]) |
@@ -58,19 +63,48 @@ __device__ __forceinline__ bool is_attacked(const BoardState* pos, Square sq, in
 }
 
 __device__ __forceinline__ bool in_check(const BoardState* pos) {
-    Square king_sq = lsb(pos->pieces[pos->side_to_move][KING]);
+    Bitboard king_bb = pos->pieces[pos->side_to_move][KING];
+    if (king_bb == 0) {
+        return true;  // Invalid position, treat as in check
+    }
+    Square king_sq = lsb(king_bb);
     return is_attacked(pos, king_sq, pos->side_to_move ^ 1);
 }
 
 // Move generation
-__device__ int generate_pawn_moves(const BoardState* pos, Move* moves, Bitboard target);
-__device__ int generate_knight_moves(const BoardState* pos, Move* moves, Bitboard target);
-__device__ int generate_bishop_moves(const BoardState* pos, Move* moves, Bitboard target);
-__device__ int generate_rook_moves(const BoardState* pos, Move* moves, Bitboard target);
-__device__ int generate_queen_moves(const BoardState* pos, Move* moves, Bitboard target);
-__device__ int generate_king_moves(const BoardState* pos, Move* moves, Bitboard target);
-__device__ int generate_pseudo_legal_moves(const BoardState* pos, Move* moves);
-__device__ int generate_legal_moves(const BoardState* pos, Move* moves);
+__device__ int generate_pawn_moves_cap(const BoardState* pos, Move* moves, Bitboard target, int max_moves);
+__device__ int generate_knight_moves_cap(const BoardState* pos, Move* moves, Bitboard target, int max_moves);
+__device__ int generate_bishop_moves_cap(const BoardState* pos, Move* moves, Bitboard target, int max_moves);
+__device__ int generate_rook_moves_cap(const BoardState* pos, Move* moves, Bitboard target, int max_moves);
+__device__ int generate_queen_moves_cap(const BoardState* pos, Move* moves, Bitboard target, int max_moves);
+__device__ int generate_king_moves_cap(const BoardState* pos, Move* moves, Bitboard target, int max_moves);
+__device__ int generate_pseudo_legal_moves_cap(const BoardState* pos, Move* moves, int max_moves);
+__device__ int generate_legal_moves_cap(const BoardState* pos, Move* moves, int max_moves);
+
+__device__ __forceinline__ int generate_pawn_moves(const BoardState* pos, Move* moves, Bitboard target) {
+    return generate_pawn_moves_cap(pos, moves, target, MAX_MOVES);
+}
+__device__ __forceinline__ int generate_knight_moves(const BoardState* pos, Move* moves, Bitboard target) {
+    return generate_knight_moves_cap(pos, moves, target, MAX_MOVES);
+}
+__device__ __forceinline__ int generate_bishop_moves(const BoardState* pos, Move* moves, Bitboard target) {
+    return generate_bishop_moves_cap(pos, moves, target, MAX_MOVES);
+}
+__device__ __forceinline__ int generate_rook_moves(const BoardState* pos, Move* moves, Bitboard target) {
+    return generate_rook_moves_cap(pos, moves, target, MAX_MOVES);
+}
+__device__ __forceinline__ int generate_queen_moves(const BoardState* pos, Move* moves, Bitboard target) {
+    return generate_queen_moves_cap(pos, moves, target, MAX_MOVES);
+}
+__device__ __forceinline__ int generate_king_moves(const BoardState* pos, Move* moves, Bitboard target) {
+    return generate_king_moves_cap(pos, moves, target, MAX_MOVES);
+}
+__device__ __forceinline__ int generate_pseudo_legal_moves(const BoardState* pos, Move* moves) {
+    return generate_pseudo_legal_moves_cap(pos, moves, MAX_MOVES);
+}
+__device__ __forceinline__ int generate_legal_moves(const BoardState* pos, Move* moves) {
+    return generate_legal_moves_cap(pos, moves, MAX_MOVES);
+}
 
 // Make move
 __device__ void make_move(BoardState* pos, Move m);

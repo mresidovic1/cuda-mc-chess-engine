@@ -54,11 +54,8 @@ node_modules/
 venv/
 .env
 
-# External reference implementations
-Jaglavak-master/
-perft_gpu-master/
+# Tests
+tests/
 
-# Claude and documentation
-.claude
-docs/
-/gpu/docs/
+
+

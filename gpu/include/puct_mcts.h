@@ -633,7 +633,7 @@ struct PUCTConfig {
     static PUCTConfig Advanced() {
         PUCTConfig cfg;
         cfg.num_simulations = 350000;
-        cfg.batch_size = 512;
+        cfg.batch_size = 4096;
 
         // Move ordering features
         cfg.use_continuation_history = true;
